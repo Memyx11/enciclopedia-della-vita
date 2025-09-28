@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enciclopedia della Vita - Conoscenza Indipendente sui 9 Pilastri</title>
+    <meta name="description" content="Esplora ogni aspetto della vita attraverso i 9 pilastri: salute, fede, cibo, sport, musica, arte, medicina, politica, comicità. Timeline narrative e fonti trasparenti.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            line-height: 1.6;
+            color: #2c3e50;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .hero {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="1" fill="white" opacity="0.1"/><circle cx="10" cy="90" r="1" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            z-index: 1;
+        }
+        
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .main-title {
+            font-size: clamp(2.5rem, 8vw, 5rem);
+            font-weight: bold;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            animation: fadeInUp 1s ease-out;
+        }
+        
+        .subtitle {
+            font-size: clamp(1.2rem, 4vw, 2rem);
+            margin-bottom: 2rem;
+            opacity: 0.9;
+            animation: fadeInUp 1s ease-out 0.3s both;
+        }
+        
+        .tagline {
+            font-size: clamp(1rem, 3vw, 1.4rem);
+            margin-bottom: 3rem;
+            opacity: 0.8;
+            font-style: italic;
+            animation: fadeInUp 1s ease-out 0.6s both;
+        }
+        
+        .search-container {
+            max-width: 600px;
+            margin: 0 auto 3rem;
+            position: relative;
+            animation: fadeInUp 1s ease-out 0.9s both;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 1.5rem 2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 50px;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            background: white;
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        .search-examples {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .example-tags {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .example-tag {
+            background: rgba(255,255,255,0.2);
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        .example-tag:hover {
+            background: rgba(255,255,255,0.4);
+            transform: scale(1.1);
+        }
+        
+        .pillars-section {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(20px);
+            margin: 2rem;
+            border-radius: 30px;
+            padding: 3rem 2rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            animation: fadeInUp 1s ease-out 1.2s both;
+        }
+        
+        .pillars-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+        
+        .pillars-subtitle {
+            text-align: center;
+            font-size: 1.2rem;
+            margin-bottom: 3rem;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        
+        .pillars-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .pillar-card {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.4s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .pillar-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        }
+        
+        .pillar-header {
+            padding: 2rem 1.5rem 1rem;
+            color: white;
+            font-weight: bold;
+            font-size: 1.3rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .pillar-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: inherit;
+            opacity: 0.9;
+            z-index: 1;
+        }
+        
+        .pillar-header-content {
+            position: relative;
+            z-index: 2;
+        }
+        
+        .pillar-number {
+            font-size: 3rem;
+            opacity: 0.7;
+            display: block;
+            line-height: 1;
+        }
+        
+        .pillar-name {
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+        }
+        
+        .pillar-content {
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .pillar-description {
+            color: #7f8c8d;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+        
+        .pillar-examples {
+            font-size: 0.9rem;
+            color: #95a5a6;
+            font-style: italic;
+        }
+        
+        /* Colori specifici per ogni pilastro */
+        .pillar-1 { background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%); }
+        .pillar-2 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .pillar-3 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .pillar-4 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .pillar-5 { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
+        .pillar-6 { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
+        .pillar-7 { background: linear-gradient(135deg, #ff8a80 0%, #ffccbc 100%); }
+        .pillar-8 { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
+        .pillar-9 { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); }
+        
+        .footer {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: rgba(255,255,255,0.8);
+            animation: fadeInUp 1s ease-out 1.5s both;
+        }
+        
+        .footer-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .manifesto {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            margin-bottom: 2rem;
+            font-style: italic;
+        }
+        
+        .independence-note {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+            margin-top: 2rem;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        @media (max-width: 768px) {
+            .hero {
+                padding: 2rem 1rem;
+            }
+            
+            .pillars-section {
+                margin: 1rem;
+                padding: 2rem 1rem;
+            }
+            
+            .pillars-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            
+            .example-tags {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <div class="hero-content">
+            <h1 class="main-title">ENCICLOPEDIA DELLA VITA</h1>
+            <p class="subtitle">Conoscenza Indipendente sui 9 Pilastri</p>
+            <p class="tagline">"Ogni argomento ha una storia. Ogni storia cambia tutto."</p>
+            
+            <div class="search-container">
+                <input type="text" class="search-box" placeholder="Cerca qualsiasi argomento... (es. pasta, caffè, democrazia)" id="searchInput">
+                <div class="search-examples">
+                    <p>Prova con:</p>
+                    <div class="example-tags">
+                        <span class="example-tag" onclick="searchFor('pasta')">pasta</span>
+                        <span class="example-tag" onclick="searchFor('caffè')">caffè</span>
+                        <span class="example-tag" onclick="searchFor('democrazia')">democrazia</span>
+                        <span class="example-tag" onclick="searchFor('pizza')">pizza</span>
+                        <span class="example-tag" onclick="searchFor('musica')">musica</span>
+                        <span class="example-tag" onclick="searchFor('calcio')">calcio</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="pillars-section">
+        <h2 class="pillars-title">I 9 Pilastri della Vita</h2>
+        <p class="pillars-subtitle">Ogni argomento viene esplorato attraverso queste 9 dimensioni fondamentali</p>
+        
+        <div class="pillars-grid">
+            <div class="pillar-card" onclick="explorePillar(1)">
+                <div class="pillar-header pillar-1">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">1</span>
+                        <div class="pillar-name">SALUTE</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Benessere fisico e mentale, nutrizione, prevenzione</p>
+                    <p class="pillar-examples">corpo • mente • equilibrio</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(2)">
+                <div class="pillar-header pillar-2">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">2</span>
+                        <div class="pillar-name">FEDE</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Spiritualità, filosofia, ricerca di significato</p>
+                    <p class="pillar-examples">anima • valori • trascendenza</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(3)">
+                <div class="pillar-header pillar-3">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">3</span>
+                        <div class="pillar-name">CIBO</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Nutrizione, cultura culinaria, tradizioni</p>
+                    <p class="pillar-examples">sapori • tradizione • convivialità</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(4)">
+                <div class="pillar-header pillar-4">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">4</span>
+                        <div class="pillar-name">SPORT</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Movimento, competizione, superamento dei limiti</p>
+                    <p class="pillar-examples">forza • disciplina • vittoria</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(5)">
+                <div class="pillar-header pillar-5">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">5</span>
+                        <div class="pillar-name">MUSICA</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Armonia, espressione, emozione universale</p>
+                    <p class="pillar-examples">ritmo • melodia • emozione</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(6)">
+                <div class="pillar-header pillar-6">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">6</span>
+                        <div class="pillar-name">ARTE</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Creatività, bellezza, espressione artistica</p>
+                    <p class="pillar-examples">bellezza • creatività • ispirazione</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(7)">
+                <div class="pillar-header pillar-7">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">7</span>
+                        <div class="pillar-name">MEDICINA</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Guarigione, cura, innovazione medica</p>
+                    <p class="pillar-examples">cura • ricerca • guarigione</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(8)">
+                <div class="pillar-header pillar-8">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">8</span>
+                        <div class="pillar-name">POLITICA</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Governance, società, partecipazione civica</p>
+                    <p class="pillar-examples">democrazia • giustizia • comunità</p>
+                </div>
+            </div>
+            
+            <div class="pillar-card" onclick="explorePillar(9)">
+                <div class="pillar-header pillar-9">
+                    <div class="pillar-header-content">
+                        <span class="pillar-number">9</span>
+                        <div class="pillar-name">COMICITÀ</div>
+                    </div>
+                </div>
+                <div class="pillar-content">
+                    <p class="pillar-description">Umorismo, ironia, leggerezza necessaria</p>
+                    <p class="pillar-examples">risata • ironia • gioia</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <div class="footer-content">
+            <div class="manifesto">
+                "Non esistono argomenti isolati. Tutto si connette. La pasta non è solo cibo - è storia, cultura, scienza, politica, arte. Ogni ricerca diventa un viaggio attraverso l'interconnessione della vita."
+            </div>
+            
+            <div class="independence-note">
+                <strong>🔒 Indipendenza Garantita</strong><br>
+                Questa enciclopedia è completamente indipendente. Nessuna azienda, governo o ente può controllarla, censurarla o influenzarla. La conoscenza appartiene a tutti.
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Funzioni di interattività
+        function searchFor(term) {
+            document.getElementById('searchInput').value = term;
+            performSearch(term);
+        }
+        
+        function performSearch(term) {
+            // Per ora mostra un alert, poi creeremo le pagine vere
+            alert(`🔍 Ricerca: "${term}"\n\nProssimamente vedrai:\n✨ Timeline narrativa completa\n📚 Esplorazione attraverso i 9 pilastri\n🔗 Collegamenti inaspettati\n📖 Fonti trasparenti e verificabili`);
+        }
+        
+        function explorePillar(number) {
+            const pillars = {
+                1: 'SALUTE - Corpo e Mente',
+                2: 'FEDE - Spiritualità e Significato', 
+                3: 'CIBO - Nutrizione e Tradizione',
+                4: 'SPORT - Movimento e Performance',
+                5: 'MUSICA - Armonia ed Emozione',
+                6: 'ARTE - Creatività e Bellezza',
+                7: 'MEDICINA - Cura e Guarigione',
+                8: 'POLITICA - Società e Governance',
+                9: 'COMICITÀ - Umorismo e Leggerezza'
+            };
+            
+            alert(`📖 Pilastro ${number}: ${pillars[number]}\n\nProssimamente:\n🎯 Tutti gli argomenti categorizzati per questo pilastro\n📊 Statistiche e tendenze\n💡 Connessioni interdisciplinari\n👥 Contributi della community`);
+        }
+        
+        // Gestione ricerca con Enter
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const term = this.value.trim();
+                if (term) {
+                    performSearch(term);
+                }
+            }
+        });
+        
+        // Animazioni scroll
+        window.addEventListener('scroll', function() {
+            const scrolled = window.pageYOffset;
+            const rate = scrolled * -0.5;
+            document.querySelector('.hero').style.transform = `translateY(${rate}px)`;
+        });
+        
+        // Easter egg: Konami code
+        let konamiCode = [];
+        const konami = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
+        
+        document.addEventListener('keydown', function(e) {
+            konamiCode.push(e.keyCode);
+            if (konamiCode.length > konami.length) {
+                konamiCode.shift();
+            }
+            
+            if (konamiCode.join(',') === konami.join(',')) {
+                document.body.style.filter = 'hue-rotate(180deg)';
+                setTimeout(() => {
+                    document.body.style.filter = 'none';
+                    alert('🎉 Easter Egg! Hai sbloccato la modalità "Matrix della Conoscenza"!\n\nOgni verità ha infinite sfumature...');
+                }, 1000);
+                konamiCode = [];
+            }
+        });
+    </script>
+</body>
+</html>
