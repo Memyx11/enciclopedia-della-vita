@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enciclopedia della Vita - Conoscenza Indipendente sui 9 Pilastri</title>
-    <meta name="description" content="Esplora ogni aspetto della vita attraverso i 9 pilastri: salute, fede, cibo, sport, musica, arte, medicina, politica, comicità. Timeline narrative e fonti trasparenti.">
+    <title>Enciclopedia della Vita - Conoscenza Indipendente con Nūr AI</title>
     <style>
         * {
             margin: 0;
@@ -20,30 +19,12 @@
             min-height: 100vh;
         }
         
+        /* HERO SECTION */
         .hero {
             text-align: center;
             padding: 4rem 2rem;
             color: white;
             position: relative;
-            overflow: hidden;
-        }
-        
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="1" fill="white" opacity="0.1"/><circle cx="10" cy="90" r="1" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-            z-index: 1;
-        }
-        
-        .hero-content {
-            position: relative;
-            z-index: 2;
-            max-width: 1000px;
-            margin: 0 auto;
         }
         
         .main-title {
@@ -56,7 +37,7 @@
         
         .subtitle {
             font-size: clamp(1.2rem, 4vw, 2rem);
-            margin-bottom: 2rem;
+            margin-bottom: 1rem;
             opacity: 0.9;
             animation: fadeInUp 1s ease-out 0.3s both;
         }
@@ -69,65 +50,222 @@
             animation: fadeInUp 1s ease-out 0.6s both;
         }
         
-        .search-container {
-            max-width: 600px;
-            margin: 0 auto 3rem;
-            position: relative;
+        .cta-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
             animation: fadeInUp 1s ease-out 0.9s both;
         }
         
-        .search-box {
-            width: 100%;
-            padding: 1.5rem 2rem;
-            font-size: 1.2rem;
+        .cta-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 20px 40px;
             border: none;
             border-radius: 50px;
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-        
-        .search-box:focus {
-            outline: none;
-            background: white;
-            transform: scale(1.05);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-        }
-        
-        .search-examples {
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            opacity: 0.8;
-        }
-        
-        .example-tags {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-        
-        .example-tag {
-            background: rgba(255,255,255,0.2);
-            padding: 0.3rem 0.8rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
+            font-size: 1.2rem;
+            font-weight: bold;
             cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             transition: all 0.3s ease;
-            border: 1px solid rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-decoration: none;
+            display: inline-block;
         }
         
-        .example-tag:hover {
-            background: rgba(255,255,255,0.4);
-            transform: scale(1.1);
+        .cta-button:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
         }
         
-        .pillars-section {
+        .cta-button.secondary {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+        }
+        
+        /* CHAT WIDGET */
+        .chat-widget {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .chat-button {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            font-weight: bold;
+            animation: pulse 2s infinite;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: none;
+            font-size: 16px;
+        }
+        
+        .chat-button:hover {
+            transform: scale(1.05);
+        }
+        
+        .chat-window {
+            width: 400px;
+            height: 600px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
+            display: none;
+            flex-direction: column;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+        }
+        
+        .close-chat {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .close-chat:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 18px;
+            border-radius: 20px;
+            max-width: 85%;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        
+        .nur-message {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+        
+        .user-message {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+        
+        .typing-indicator {
+            background: #e0e0e0;
+            padding: 15px 20px;
+            border-radius: 20px;
+            margin-right: auto;
+            margin-bottom: 15px;
+            animation: pulse 1.5s infinite;
+            font-style: italic;
+        }
+        
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef5350;
+            margin-right: auto;
+        }
+        
+        .chat-input {
+            padding: 20px;
+            display: flex;
+            gap: 10px;
+            background: white;
+            border-top: 1px solid #eee;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            outline: none;
+            font-size: 16px;
+        }
+        
+        .chat-input input:focus {
+            border-color: #56ab2f;
+        }
+        
+        .send-button {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .send-button:hover {
+            transform: scale(1.05);
+        }
+        
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* STATUS INDICATOR */
+        .status-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1001;
+            transition: all 0.3s ease;
+        }
+        
+        .status-online {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .status-offline {
+            background: #f44336;
+            color: white;
+        }
+        
+        /* FEATURES SECTION */
+        .features-section {
             background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(20px);
             margin: 2rem;
             border-radius: 30px;
             padding: 3rem 2rem;
@@ -135,14 +273,14 @@
             animation: fadeInUp 1s ease-out 1.2s both;
         }
         
-        .pillars-title {
+        .features-title {
             text-align: center;
             font-size: 2.5rem;
             margin-bottom: 1rem;
             color: #2c3e50;
         }
         
-        .pillars-subtitle {
+        .features-subtitle {
             text-align: center;
             font-size: 1.2rem;
             margin-bottom: 3rem;
@@ -150,121 +288,41 @@
             font-style: italic;
         }
         
-        .pillars-grid {
+        .feature-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
+            margin-top: 3rem;
         }
         
-        .pillar-card {
+        .feature-card {
             background: white;
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            transition: all 0.4s ease;
-            cursor: pointer;
-            position: relative;
-        }
-        
-        .pillar-card:hover {
-            transform: translateY(-10px) scale(1.02);
-            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
-        }
-        
-        .pillar-header {
-            padding: 2rem 1.5rem 1rem;
-            color: white;
-            font-weight: bold;
-            font-size: 1.3rem;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .pillar-header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: inherit;
-            opacity: 0.9;
-            z-index: 1;
-        }
-        
-        .pillar-header-content {
-            position: relative;
-            z-index: 2;
-        }
-        
-        .pillar-number {
-            font-size: 3rem;
-            opacity: 0.7;
-            display: block;
-            line-height: 1;
-        }
-        
-        .pillar-name {
-            font-size: 1.1rem;
-            margin-top: 0.5rem;
-        }
-        
-        .pillar-content {
-            padding: 1.5rem;
-            text-align: center;
-        }
-        
-        .pillar-description {
-            color: #7f8c8d;
-            margin-bottom: 1rem;
-            line-height: 1.5;
-        }
-        
-        .pillar-examples {
-            font-size: 0.9rem;
-            color: #95a5a6;
-            font-style: italic;
-        }
-        
-        /* Colori specifici per ogni pilastro */
-        .pillar-1 { background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%); }
-        .pillar-2 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .pillar-3 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-        .pillar-4 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-        .pillar-5 { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
-        .pillar-6 { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
-        .pillar-7 { background: linear-gradient(135deg, #ff8a80 0%, #ffccbc 100%); }
-        .pillar-8 { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
-        .pillar-9 { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); }
-        
-        .footer {
-            text-align: center;
-            padding: 3rem 2rem;
-            color: rgba(255,255,255,0.8);
-            animation: fadeInUp 1s ease-out 1.5s both;
-        }
-        
-        .footer-content {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        
-        .manifesto {
-            font-size: 1.1rem;
-            line-height: 1.8;
-            margin-bottom: 2rem;
-            font-style: italic;
-        }
-        
-        .independence-note {
-            background: rgba(255,255,255,0.1);
-            padding: 1.5rem;
+            padding: 2rem;
             border-radius: 15px;
-            border: 1px solid rgba(255,255,255,0.2);
-            margin-top: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-title {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+        
+        .feature-description {
+            color: #7f8c8d;
+            line-height: 1.6;
         }
         
         @keyframes fadeInUp {
@@ -283,257 +341,323 @@
             50% { transform: scale(1.05); }
         }
         
-        .pulse-animation {
-            animation: pulse 2s infinite;
-        }
-        
         @media (max-width: 768px) {
+            .chat-window {
+                width: 90vw;
+                height: 80vh;
+            }
+            
             .hero {
                 padding: 2rem 1rem;
             }
             
-            .pillars-section {
+            .features-section {
                 margin: 1rem;
                 padding: 2rem 1rem;
             }
             
-            .pillars-grid {
-                grid-template-columns: 1fr;
-                gap: 1.5rem;
-            }
-            
-            .example-tags {
+            .cta-container {
                 flex-direction: column;
                 align-items: center;
+            }
+            
+            .cta-button {
+                width: 80%;
+                max-width: 300px;
             }
         }
     </style>
 </head>
 <body>
+    <!-- STATUS INDICATOR -->
+    <div id="statusIndicator" class="status-indicator status-offline">
+        🔴 Nūr Offline
+    </div>
+
+    <!-- HERO SECTION -->
     <div class="hero">
-        <div class="hero-content">
-            <h1 class="main-title">ENCICLOPEDIA DELLA VITA</h1>
-            <p class="subtitle">Conoscenza Indipendente sui 9 Pilastri</p>
-            <p class="tagline">"Ogni argomento ha una storia. Ogni storia cambia tutto."</p>
-            
-            <div class="search-container">
-                <input type="text" class="search-box" placeholder="Cerca qualsiasi argomento... (es. pasta, caffè, democrazia)" id="searchInput">
-                <div class="search-examples">
-                    <p>Prova con:</p>
-                    <div class="example-tags">
-                        <span class="example-tag" onclick="searchFor('pasta')">pasta</span>
-                        <span class="example-tag" onclick="searchFor('caffè')">caffè</span>
-                        <span class="example-tag" onclick="searchFor('democrazia')">democrazia</span>
-                        <span class="example-tag" onclick="searchFor('pizza')">pizza</span>
-                        <span class="example-tag" onclick="searchFor('musica')">musica</span>
-                        <span class="example-tag" onclick="searchFor('calcio')">calcio</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="pillars-section">
-        <h2 class="pillars-title">I 9 Pilastri della Vita</h2>
-        <p class="pillars-subtitle">Ogni argomento viene esplorato attraverso queste 9 dimensioni fondamentali</p>
+        <h1 class="main-title">ENCICLOPEDIA DELLA VITA</h1>
+        <p class="subtitle">Conoscenza Indipendente sui 9 Pilastri</p>
+        <p class="tagline">"Ogni argomento ha una storia. Ogni storia cambia tutto."</p>
         
-        <div class="pillars-grid">
-            <div class="pillar-card" onclick="explorePillar(1)">
-                <div class="pillar-header pillar-1">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">1</span>
-                        <div class="pillar-name">SALUTE</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Benessere fisico e mentale, nutrizione, prevenzione</p>
-                    <p class="pillar-examples">corpo • mente • equilibrio</p>
-                </div>
+        <div class="cta-container">
+            <button class="cta-button" onclick="startAssessment()">
+                🎯 Assessment Personalizzato
+            </button>
+            <button class="cta-button secondary" onclick="toggleChat()">
+                🌟 Parla con Nūr AI
+            </button>
+        </div>
+    </div>
+    
+    <!-- FEATURES SECTION -->
+    <div class="features-section">
+        <h2 class="features-title">🤖 Incontra Nūr - La Tua Coach IA</h2>
+        <p class="features-subtitle">
+            Intelligenza artificiale locale che rispetta la tua privacy e ti aiuta a crescere
+        </p>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3 class="feature-title">Assessment Personalizzato</h3>
+                <p class="feature-description">
+                    Nūr analizza la tua situazione specifica e crea un programma su misura per te, 
+                    rispettando i tuoi tempi e le tue possibilità.
+                </p>
             </div>
             
-            <div class="pillar-card" onclick="explorePillar(2)">
-                <div class="pillar-header pillar-2">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">2</span>
-                        <div class="pillar-name">FEDE</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Spiritualità, filosofia, ricerca di significato</p>
-                    <p class="pillar-examples">anima • valori • trascendenza</p>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3 class="feature-title">Privacy Totale</h3>
+                <p class="feature-description">
+                    Tutto funziona in locale sul tuo computer. Nessun dato viene inviato a server esterni. 
+                    La tua privacy è garantita al 100%.
+                </p>
             </div>
             
-            <div class="pillar-card" onclick="explorePillar(3)">
-                <div class="pillar-header pillar-3">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">3</span>
-                        <div class="pillar-name">CIBO</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Nutrizione, cultura culinaria, tradizioni</p>
-                    <p class="pillar-examples">sapori • tradizione • convivialità</p>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3 class="feature-title">Coaching 24/7</h3>
+                <p class="feature-description">
+                    Sempre disponibile per consigli, motivazione e supporto nel tuo percorso di crescita personale.
+                </p>
             </div>
             
-            <div class="pillar-card" onclick="explorePillar(4)">
-                <div class="pillar-header pillar-4">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">4</span>
-                        <div class="pillar-name">SPORT</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Movimento, competizione, superamento dei limiti</p>
-                    <p class="pillar-examples">forza • disciplina • vittoria</p>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3 class="feature-title">Risultati Concreti</h3>
+                <p class="feature-description">
+                    Strategie pratiche basate su principi universali testati per miglioramenti reali e duraturi.
+                </p>
             </div>
             
-            <div class="pillar-card" onclick="explorePillar(5)">
-                <div class="pillar-header pillar-5">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">5</span>
-                        <div class="pillar-name">MUSICA</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Armonia, espressione, emozione universale</p>
-                    <p class="pillar-examples">ritmo • melodia • emozione</p>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌱</div>
+                <h3 class="feature-title">Crescita Olistica</h3>
+                <p class="feature-description">
+                    Approccio integrato che considera tutti i 9 pilastri della vita per un miglioramento completo.
+                </p>
             </div>
             
-            <div class="pillar-card" onclick="explorePillar(6)">
-                <div class="pillar-header pillar-6">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">6</span>
-                        <div class="pillar-name">ARTE</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Creatività, bellezza, espressione artistica</p>
-                    <p class="pillar-examples">bellezza • creatività • ispirazione</p>
-                </div>
-            </div>
-            
-            <div class="pillar-card" onclick="explorePillar(7)">
-                <div class="pillar-header pillar-7">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">7</span>
-                        <div class="pillar-name">MEDICINA</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Guarigione, cura, innovazione medica</p>
-                    <p class="pillar-examples">cura • ricerca • guarigione</p>
-                </div>
-            </div>
-            
-            <div class="pillar-card" onclick="explorePillar(8)">
-                <div class="pillar-header pillar-8">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">8</span>
-                        <div class="pillar-name">POLITICA</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Governance, società, partecipazione civica</p>
-                    <p class="pillar-examples">democrazia • giustizia • comunità</p>
-                </div>
-            </div>
-            
-            <div class="pillar-card" onclick="explorePillar(9)">
-                <div class="pillar-header pillar-9">
-                    <div class="pillar-header-content">
-                        <span class="pillar-number">9</span>
-                        <div class="pillar-name">COMICITÀ</div>
-                    </div>
-                </div>
-                <div class="pillar-content">
-                    <p class="pillar-description">Umorismo, ironia, leggerezza necessaria</p>
-                    <p class="pillar-examples">risata • ironia • gioia</p>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤝</div>
+                <h3 class="feature-title">Supporto Empatico</h3>
+                <p class="feature-description">
+                    Nūr comprende le tue sfide e ti accompagna con saggezza ed empatia nel tuo percorso.
+                </p>
             </div>
         </div>
     </div>
     
-    <div class="footer">
-        <div class="footer-content">
-            <div class="manifesto">
-                "Non esistono argomenti isolati. Tutto si connette. La pasta non è solo cibo - è storia, cultura, scienza, politica, arte. Ogni ricerca diventa un viaggio attraverso l'interconnessione della vita."
+    <!-- CHAT WIDGET -->
+    <div class="chat-widget">
+        <button class="chat-button" onclick="toggleChat()">
+            <span>🌟</span>
+            <span>Parla con Nūr</span>
+        </button>
+        
+        <div class="chat-window" id="chatWindow">
+            <div class="chat-header">
+                <span>🌟 Nūr - La Tua Coach IA</span>
+                <button class="close-chat" onclick="toggleChat()">×</button>
             </div>
             
-            <div class="independence-note">
-                <strong>🔒 Indipendenza Garantita</strong><br>
-                Questa enciclopedia è completamente indipendente. Nessuna azienda, governo o ente può controllarla, censurarla o influenzarla. La conoscenza appartiene a tutti.
+            <div class="chat-messages" id="chatMessages">
+                <div class="message nur-message">
+                    Assalam alaikum! Sono Nūr, la tua coach di vita personale. 
+                    Sono qui per aiutarti a diventare la migliore versione di te stesso attraverso i 9 pilastri della vita. 
+                    Come posso supportarti oggi?
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <input type="text" id="userInput" placeholder="Scrivi il tuo messaggio..." onkeypress="handleEnter(event)" disabled>
+                <button class="send-button" id="sendButton" onclick="sendMessage()" disabled>Invia</button>
             </div>
         </div>
     </div>
     
     <script>
-        // Funzioni di interattività
-        function searchFor(term) {
-            document.getElementById('searchInput').value = term;
-            performSearch(term);
+        // CONFIGURAZIONE
+        const NUR_API_URL = 'http://localhost:3000/api/chat';
+        let conversationHistory = [];
+        let isConnected = false;
+        
+        // CHECK CONNESSIONE AL CARICAMENTO
+        window.onload = function() {
+            console.log('🌟 Enciclopedia della Vita caricata!');
+            checkNurConnection();
+        };
+        
+        // VERIFICA CONNESSIONE NŪR
+        async function checkNurConnection() {
+            try {
+                const response = await fetch('http://localhost:3000/test');
+                if (response.ok) {
+                    setConnectionStatus(true);
+                    console.log('✅ Nūr connessa e pronta!');
+                } else {
+                    throw new Error('Proxy non risponde');
+                }
+            } catch (error) {
+                setConnectionStatus(false);
+                console.log('❌ Nūr non disponibile:', error.message);
+            }
         }
         
-        function performSearch(term) {
-            // Per ora mostra un alert, poi creeremo le pagine vere
-            alert(`🔍 Ricerca: "${term}"\n\nProssimamente vedrai:\n✨ Timeline narrativa completa\n📚 Esplorazione attraverso i 9 pilastri\n🔗 Collegamenti inaspettati\n📖 Fonti trasparenti e verificabili`);
-        }
-        
-        function explorePillar(number) {
-            const pillars = {
-                1: 'SALUTE - Corpo e Mente',
-                2: 'FEDE - Spiritualità e Significato', 
-                3: 'CIBO - Nutrizione e Tradizione',
-                4: 'SPORT - Movimento e Performance',
-                5: 'MUSICA - Armonia ed Emozione',
-                6: 'ARTE - Creatività e Bellezza',
-                7: 'MEDICINA - Cura e Guarigione',
-                8: 'POLITICA - Società e Governance',
-                9: 'COMICITÀ - Umorismo e Leggerezza'
-            };
+        // AGGIORNA STATUS CONNESSIONE
+        function setConnectionStatus(connected) {
+            isConnected = connected;
+            const indicator = document.getElementById('statusIndicator');
+            const userInput = document.getElementById('userInput');
+            const sendButton = document.getElementById('sendButton');
             
-            alert(`📖 Pilastro ${number}: ${pillars[number]}\n\nProssimamente:\n🎯 Tutti gli argomenti categorizzati per questo pilastro\n📊 Statistiche e tendenze\n💡 Connessioni interdisciplinari\n👥 Contributi della community`);
+            if (connected) {
+                indicator.className = 'status-indicator status-online';
+                indicator.textContent = '🟢 Nūr Online';
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                userInput.placeholder = 'Scrivi il tuo messaggio...';
+            } else {
+                indicator.className = 'status-indicator status-offline';
+                indicator.textContent = '🔴 Nūr Offline';
+                userInput.disabled = true;
+                sendButton.disabled = true;
+                userInput.placeholder = 'Avvia il proxy locale per chattare con Nūr...';
+            }
         }
         
-        // Gestione ricerca con Enter
-        document.getElementById('searchInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                const term = this.value.trim();
-                if (term) {
-                    performSearch(term);
+        // FUNZIONI CHAT
+        function toggleChat() {
+            const chatWindow = document.getElementById('chatWindow');
+            const isVisible = chatWindow.style.display === 'flex';
+            chatWindow.style.display = isVisible ? 'none' : 'flex';
+            
+            if (!isVisible) {
+                if (isConnected) {
+                    document.getElementById('userInput').focus();
+                } else {
+                    checkNurConnection();
+                    if (!isConnected) {
+                        addMessage(
+                            "Per chattare con me, devi avviare il proxy locale. " +
+                            "Segui le istruzioni: apri il terminale, vai nella cartella 'enciclopedia-vita-local' " +
+                            "e digita 'node proxy-server.js'", 
+                            'error'
+                        );
+                    }
                 }
             }
-        });
+        }
         
-        // Animazioni scroll
-        window.addEventListener('scroll', function() {
-            const scrolled = window.pageYOffset;
-            const rate = scrolled * -0.5;
-            document.querySelector('.hero').style.transform = `translateY(${rate}px)`;
-        });
-        
-        // Easter egg: Konami code
-        let konamiCode = [];
-        const konami = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65];
-        
-        document.addEventListener('keydown', function(e) {
-            konamiCode.push(e.keyCode);
-            if (konamiCode.length > konami.length) {
-                konamiCode.shift();
+        async function sendMessage() {
+            if (!isConnected) {
+                addMessage("Connessione a Nūr non disponibile. Verifica che il proxy sia attivo.", 'error');
+                return;
             }
             
-            if (konamiCode.join(',') === konami.join(',')) {
-                document.body.style.filter = 'hue-rotate(180deg)';
-                setTimeout(() => {
-                    document.body.style.filter = 'none';
-                    alert('🎉 Easter Egg! Hai sbloccato la modalità "Matrix della Conoscenza"!\n\nOgni verità ha infinite sfumature...');
-                }, 1000);
-                konamiCode = [];
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // Aggiungi messaggio utente
+            addMessage(message, 'user');
+            input.value = '';
+            
+            // Disabilita input durante la risposta
+            input.disabled = true;
+            document.getElementById('sendButton').disabled = true;
+            
+            // Mostra indicatore di typing
+            showTyping();
+            
+            try {
+                // Chiamata a Nūr locale
+                const response = await fetch(NUR_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                hideTyping();
+                addMessage(data.response, 'nur');
+                
+                // Salva conversazione
+                conversationHistory.push({ user: message, nur: data.response });
+                
+                // Riabilita input
+                input.disabled = false;
+                document.getElementById('sendButton').disabled = false;
+                input.focus();
+                
+            } catch (error) {
+                hideTyping();
+                setConnectionStatus(false);
+                addMessage(
+                    "Mi dispiace, sto avendo problemi di connessione. " +
+                    "Verifica che il proxy sia attivo con: node proxy-server.js", 
+                    'error'
+                );
+                
+                // Riabilita input
+                input.disabled = true;
+                document.getElementById('sendButton').disabled = true;
             }
-        });
+        }
+        
+        function addMessage(text, type) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function showTyping() {
+            const messagesDiv = document.getElementById('chatMessages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing-indicator';
+            typingDiv.id = 'typing';
+            typingDiv.textContent = 'Nūr sta riflettendo...';
+            messagesDiv.appendChild(typingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function hideTyping() {
+            const typing = document.getElementById('typing');
+            if (typing) typing.remove();
+        }
+        
+        function handleEnter(event) {
+            if (event.key === 'Enter' && isConnected) {
+                sendMessage();
+            }
+        }
+        
+        function startAssessment() {
+            toggleChat();
+            setTimeout(() => {
+                if (isConnected) {
+                    addMessage(
+                        "Perfetto! Iniziamo il tuo assessment personalizzato. " +
+                        "Prima di tutto, parlami un po' di te: come ti chiami e qual è la tua situazione attuale? " +
+                        "Sei studente, lavoratore, o altro? E quali sono le sfide principali che stai affrontando?", 
+                        'nur'
+                    );
+                }
+            }, 500);
+        }
+        
+        // Check periodico connessione (ogni 30 secondi)
+        setInterval(checkNurConnection, 30000);
     </script>
 </body>
 </html>
