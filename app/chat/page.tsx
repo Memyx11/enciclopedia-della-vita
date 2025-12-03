@@ -257,23 +257,6 @@ function ChatContent() {
         }
     }
 
-    const startNewConversation = async () => {
-        if (!user) return
-
-        // Archivia la conversazione corrente
-        if (conversationId) {
-            await supabase
-                .from('conversations')
-                .update({ status: 'archived' })
-                .eq('id', conversationId)
-        }
-
-        // Reset
-        setConversationId(null)
-        setMessages([])
-        setCurrentArea(null)
-    }
-
     if (!isLoaded) return null
 
     if (!user) {
@@ -313,13 +296,6 @@ function ChatContent() {
                     </div>
                 </div>
                 <div className="header-right">
-                    <button
-                        className="header-btn"
-                        onClick={startNewConversation}
-                        title="Nuova conversazione"
-                    >
-                        ✨
-                    </button>
                     <Link href="/giornale" className="header-btn" title="Giornale">
                         📰
                     </Link>
