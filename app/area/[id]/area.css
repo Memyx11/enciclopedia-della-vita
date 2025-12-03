@@ -732,6 +732,415 @@
     font-size: 1.6em;
 }
 
+/* === PROGRESS SECTION === */
+.progress-section {
+    background: rgba(20, 20, 40, 0.4);
+    border-radius: 20px;
+    padding: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.progress-section h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 15px;
+}
+
+.progress-bar-container {
+    height: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--area-color), rgba(255, 255, 255, 0.3));
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+.progress-bar-container .progress-value {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.85em;
+    font-weight: 600;
+    color: white;
+}
+
+.progress-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.progress-controls button {
+    padding: 8px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.progress-controls button:hover {
+    background: var(--area-color);
+    border-color: var(--area-color);
+    color: white;
+}
+
+/* === SOLUTIONS SECTION === */
+.solutions-section {
+    background: rgba(20, 20, 40, 0.4);
+    border-radius: 20px;
+    padding: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.solutions-section h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 15px;
+}
+
+.solution-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 12px;
+}
+
+.solution-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.solution-title {
+    font-weight: 600;
+    color: white;
+}
+
+.solution-status {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.solution-status.proposta {
+    background: rgba(255, 212, 59, 0.2);
+    color: #ffd43b;
+}
+
+.solution-status.accettata {
+    background: rgba(92, 124, 250, 0.2);
+    color: #5c7cfa;
+}
+
+.solution-status.in_corso {
+    background: rgba(81, 207, 102, 0.2);
+    color: #51cf66;
+}
+
+.solution-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px 0;
+}
+
+.solution-steps li {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9em;
+    padding: 4px 0 4px 20px;
+    position: relative;
+}
+
+.solution-steps li::before {
+    content: '•';
+    position: absolute;
+    left: 5px;
+    color: var(--area-color);
+}
+
+.solution-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.solution-actions button {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+}
+
+.btn-accept {
+    background: #51cf66;
+    color: white;
+}
+
+.btn-decline {
+    background: rgba(255, 107, 107, 0.2);
+    color: #ff6b6b;
+}
+
+.btn-start {
+    background: #5c7cfa;
+    color: white;
+}
+
+.btn-complete {
+    background: #51cf66;
+    color: white;
+}
+
+.solution-actions button:hover {
+    filter: brightness(1.1);
+}
+
+/* === CTA CHAT === */
+.cta-chat {
+    display: block;
+    text-align: center;
+    padding: 18px;
+    background: linear-gradient(135deg, var(--area-color), rgba(102, 126, 234, 0.8));
+    border-radius: 14px;
+    color: white;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.cta-chat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* === MEMORIES TAB === */
+.memories-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.memories-content h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: white;
+}
+
+.memories-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.memory-card {
+    display: flex;
+    gap: 15px;
+    background: rgba(20, 20, 40, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 18px;
+}
+
+.memory-icon {
+    font-size: 1.5em;
+    flex-shrink: 0;
+}
+
+.memory-content {
+    flex: 1;
+}
+
+.memory-type {
+    display: inline-block;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    color: var(--area-color);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.memory-content p {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.95em;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.memory-importance {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* === INSIGHTS LIST === */
+.insights-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.insight-card-small {
+    background: rgba(102, 126, 234, 0.1);
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    border-radius: 12px;
+    padding: 15px;
+}
+
+.insight-type {
+    display: inline-block;
+    font-size: 0.7em;
+    text-transform: uppercase;
+    color: #667eea;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.insight-card-small p {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9em;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.insight-date {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* === EDIT FORM === */
+.edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.edit-form .field-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.edit-form label {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.edit-form input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    color: white;
+    font-size: 0.95em;
+}
+
+.edit-form input:focus {
+    outline: none;
+    border-color: var(--area-color);
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.form-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 0.9em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.form-actions button:first-child {
+    background: var(--area-color);
+    border: none;
+    color: white;
+}
+
+.form-actions button:last-child {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* === LOADING STATE === */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    gap: 15px;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--area-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-state p {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* === AUTH PROMPT === */
+.auth-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    text-align: center;
+    padding: 20px;
+}
+
+.auth-prompt h1 {
+    font-size: 1.8em;
+    color: white;
+    margin-bottom: 10px;
+}
+
+.auth-prompt p {
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 20px;
+}
+
+.btn.btn-primary {
+    padding: 12px 24px;
+    background: var(--area-color);
+    border-radius: 10px;
+    color: white;
+    text-decoration: none;
+    font-weight: 500;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
     .area-header {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useUser } from '@clerk/nextjs'
+import { supabase } from '@/lib/supabase'
 import './area.css'
 
 // Configurazione aree
@@ -86,99 +87,228 @@ const areeConfig: Record<string, {
     }
 }
 
-// Giorni della settimana
-const giorni = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM']
-
-interface Task {
+interface LifeArea {
     id: string
-    testo: string
-    completato: boolean
-    tipo: 'giornaliero' | 'settimanale' | 'mensile'
-    giorno?: number // 0-6 per settimanali
+    progress: number
+    current_state: Record<string, any>
+    goal_state: Record<string, any>
+    active_tasks: any[]
+    notes: string
+    priority: number
 }
 
-interface AreaData {
-    situazioneAttuale: Record<string, string>
-    obiettivo: Record<string, string>
-    tasks: Task[]
-    insights: string[]
-    storico: { data: string, nota: string }[]
+interface Memory {
+    id: string
+    memory_type: string
+    content: string
+    importance: number
+    created_at: string
+}
+
+interface Insight {
+    id: string
+    content: string
+    title?: string
+    created_at: string
+    insight_type: string
+}
+
+interface Solution {
+    id: string
+    title: string
+    status: string
+    progress: number
+    steps: string[]
 }
 
 export default function AreaPage() {
     const params = useParams()
     const router = useRouter()
-    const { user } = useUser()
+    const { user, isLoaded } = useUser()
     const areaId = params?.id as string
-    
-    const [areaData, setAreaData] = useState<AreaData | null>(null)
+
+    const [lifeArea, setLifeArea] = useState<LifeArea | null>(null)
+    const [memories, setMemories] = useState<Memory[]>([])
+    const [insights, setInsights] = useState<Insight[]>([])
+    const [solutions, setSolutions] = useState<Solution[]>([])
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'journey'>('overview')
-    const [showChat, setShowChat] = useState(false)
-    const [chatMessage, setChatMessage] = useState('')
-    
+    const [activeTab, setActiveTab] = useState<'overview' | 'memories' | 'journey'>('overview')
+    const [editingState, setEditingState] = useState<'current' | 'goal' | null>(null)
+    const [formData, setFormData] = useState<Record<string, string>>({})
+
     const config = areeConfig[areaId]
-    
+
     useEffect(() => {
         if (!config) {
-            router.push('/')
+            router.push('/la-mia-vita')
             return
         }
-        
-        // Carica dati area (mock per ora, poi da Supabase)
-        loadAreaData()
-    }, [areaId])
-    
+
+        if (isLoaded && user) {
+            loadAreaData()
+        }
+    }, [areaId, isLoaded, user])
+
     const loadAreaData = async () => {
-        setLoading(false)
-        // TODO: Fetch da Supabase
-        // Per ora mock data
-        setAreaData({
-            situazioneAttuale: {},
-            obiettivo: {},
-            tasks: [
-                { id: '1', testo: 'Allenamento mattutino', completato: true, tipo: 'giornaliero' },
-                { id: '2', testo: 'Bere 2L acqua', completato: false, tipo: 'giornaliero' },
-                { id: '3', testo: '8 ore di sonno', completato: false, tipo: 'giornaliero' },
-            ],
-            insights: [],
-            storico: []
-        })
+        if (!user) return
+        setLoading(true)
+
+        try {
+            // 1. Carica dati dell'area
+            const { data: areaData } = await supabase
+                .from('life_areas')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('area_type', areaId)
+                .single()
+
+            if (areaData) {
+                setLifeArea(areaData)
+                setFormData(areaData.current_state || {})
+            }
+
+            // 2. Carica memorie relative a quest'area
+            const { data: memoriesData } = await supabase
+                .from('user_memory')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('area_related', areaId)
+                .eq('is_current', true)
+                .order('importance', { ascending: false })
+                .limit(10)
+
+            if (memoriesData) {
+                setMemories(memoriesData)
+            }
+
+            // 3. Carica insights/journal entries per quest'area
+            const { data: insightsData } = await supabase
+                .from('journal_entries')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('area_related', areaId)
+                .order('created_at', { ascending: false })
+                .limit(5)
+
+            if (insightsData) {
+                setInsights(insightsData)
+            }
+
+            // 4. Carica soluzioni/piani per quest'area
+            const { data: solutionsData } = await supabase
+                .from('solutions')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('area_type', areaId)
+                .in('status', ['proposta', 'accettata', 'in_corso'])
+                .order('created_at', { ascending: false })
+                .limit(5)
+
+            if (solutionsData) {
+                setSolutions(solutionsData)
+            }
+
+        } catch (err) {
+            console.error('Error loading area data:', err)
+        } finally {
+            setLoading(false)
+        }
     }
-    
-    const toggleTask = (taskId: string) => {
-        if (!areaData) return
-        setAreaData({
-            ...areaData,
-            tasks: areaData.tasks.map(t => 
-                t.id === taskId ? { ...t, completato: !t.completato } : t
-            )
-        })
-        // TODO: Salva su Supabase
+
+    const updateProgress = async (newProgress: number) => {
+        if (!user || !lifeArea) return
+
+        const { error } = await supabase
+            .from('life_areas')
+            .update({
+                progress: newProgress,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', lifeArea.id)
+
+        if (!error) {
+            setLifeArea({ ...lifeArea, progress: newProgress })
+        }
     }
-    
-    const getCompletedToday = () => {
-        if (!areaData) return 0
-        return areaData.tasks.filter(t => t.tipo === 'giornaliero' && t.completato).length
+
+    const saveState = async (stateType: 'current' | 'goal') => {
+        if (!user || !lifeArea) return
+
+        const updateField = stateType === 'current' ? 'current_state' : 'goal_state'
+
+        const { error } = await supabase
+            .from('life_areas')
+            .update({
+                [updateField]: formData,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', lifeArea.id)
+
+        if (!error) {
+            setLifeArea({
+                ...lifeArea,
+                [updateField]: formData
+            })
+            setEditingState(null)
+        }
     }
-    
-    const getTotalToday = () => {
-        if (!areaData) return 0
-        return areaData.tasks.filter(t => t.tipo === 'giornaliero').length
+
+    const updateSolutionStatus = async (solutionId: string, newStatus: string) => {
+        const { error } = await supabase
+            .from('solutions')
+            .update({ status: newStatus })
+            .eq('id', solutionId)
+
+        if (!error) {
+            setSolutions(solutions.map(s =>
+                s.id === solutionId ? { ...s, status: newStatus } : s
+            ))
+        }
     }
-    
+
+    const getMemoryIcon = (type: string) => {
+        const icons: Record<string, string> = {
+            fact: '📌',
+            preference: '💭',
+            goal: '🎯',
+            struggle: '😓',
+            achievement: '🏆',
+            pattern: '🔄',
+            emotion: '💜',
+            relationship: '👥',
+            trigger: '⚡',
+            value: '💎'
+        }
+        return icons[type] || '📝'
+    }
+
     if (!config) return null
-    
+    if (!isLoaded) return null
+
+    if (!user) {
+        return (
+            <div className="area-container" style={{ '--area-color': config.color } as React.CSSProperties}>
+                <div className="bg-gradient"></div>
+                <div className="auth-prompt">
+                    <h1>{config.emoji} {config.nome}</h1>
+                    <p>Accedi per vedere i tuoi dati</p>
+                    <Link href="/" className="btn btn-primary">Vai alla Home</Link>
+                </div>
+            </div>
+        )
+    }
+
     const userName = user?.firstName || 'Amico'
-    
+    const progress = lifeArea?.progress || 0
+
     return (
         <div className="area-container" style={{ '--area-color': config.color } as React.CSSProperties}>
             <div className="bg-gradient"></div>
             <div className="stars"></div>
-            
+
             {/* Header */}
             <header className="area-header">
-                <Link href="/" className="back-button">
+                <Link href="/la-mia-vita" className="back-button">
                     <span>←</span>
                     <span>Universo</span>
                 </Link>
@@ -186,239 +316,312 @@ export default function AreaPage() {
                     <span className="area-emoji">{config.emoji}</span>
                     <h1 className="area-title">{config.nome}</h1>
                 </div>
-                <button 
-                    className="quick-chat-btn"
-                    onClick={() => setShowChat(!showChat)}
-                >
+                <Link href={`/chat?area=${areaId}`} className="quick-chat-btn">
                     💬
-                </button>
+                </Link>
             </header>
-            
+
             {/* Tab Navigation */}
             <nav className="area-tabs">
-                <button 
+                <button
                     className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
                     onClick={() => setActiveTab('overview')}
                 >
                     📊 Panoramica
                 </button>
-                <button 
-                    className={`tab ${activeTab === 'tasks' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('tasks')}
+                <button
+                    className={`tab ${activeTab === 'memories' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('memories')}
                 >
-                    ✅ Azioni
+                    🧠 Memorie NUR
                 </button>
-                <button 
+                <button
                     className={`tab ${activeTab === 'journey' ? 'active' : ''}`}
                     onClick={() => setActiveTab('journey')}
                 >
                     🛤️ Viaggio
                 </button>
             </nav>
-            
+
             <main className="area-main">
-                {/* === OVERVIEW TAB === */}
-                {activeTab === 'overview' && (
-                    <div className="overview-content">
-                        {/* Journey Preview */}
-                        <section className="journey-preview">
-                            <div className="journey-point past">
-                                <div className="point-label">3 MESI FA</div>
-                                <div className="point-avatar">😔</div>
-                                <div className="point-status">Punto di partenza</div>
-                            </div>
-                            <div className="journey-line">
-                                <div className="line-progress" style={{ width: '45%' }}></div>
-                            </div>
-                            <div className="journey-point present">
-                                <div className="point-label">OGGI</div>
-                                <div className="point-avatar">😊</div>
-                                <div className="point-status">In cammino</div>
-                            </div>
-                            <div className="journey-line future-line">
-                                <div className="line-dots"></div>
-                            </div>
-                            <div className="journey-point future">
-                                <div className="point-label">OBIETTIVO</div>
-                                <div className="point-avatar">🔥</div>
-                                <div className="point-status">La tua visione</div>
-                            </div>
-                        </section>
-                        
-                        {/* Quick Stats */}
-                        <section className="quick-stats">
-                            <div className="stat-card">
-                                <div className="stat-value">{getCompletedToday()}/{getTotalToday()}</div>
-                                <div className="stat-label">Task oggi</div>
-                            </div>
-                            <div className="stat-card">
-                                <div className="stat-value">3</div>
-                                <div className="stat-label">Giorni streak</div>
-                            </div>
-                            <div className="stat-card">
-                                <div className="stat-value">45%</div>
-                                <div className="stat-label">Verso obiettivo</div>
-                            </div>
-                        </section>
-                        
-                        {/* AI Insight */}
-                        <section className="ai-insight-card">
-                            <div className="insight-header">
-                                <span className="insight-icon">🔮</span>
-                                <span className="insight-title">Insight</span>
-                            </div>
-                            <p className="insight-message">
-                                Ehi {userName}, stai andando bene! Ho notato che completi più task quando 
-                                inizi la giornata presto. Domani sveglia alle 7?
-                            </p>
-                            <div className="insight-actions">
-                                <button className="insight-btn accept">Sì, svegliami</button>
-                                <button className="insight-btn decline">Non ora</button>
-                            </div>
-                        </section>
+                {loading ? (
+                    <div className="loading-state">
+                        <div className="loading-spinner"></div>
+                        <p>Carico i tuoi dati...</p>
                     </div>
-                )}
-                
-                {/* === TASKS TAB === */}
-                {activeTab === 'tasks' && (
-                    <div className="tasks-content">
-                        {/* Settimana visiva */}
-                        <section className="week-view">
-                            <h3 className="section-title">Questa Settimana</h3>
-                            <div className="week-grid">
-                                {giorni.map((giorno, i) => {
-                                    const isToday = i === new Date().getDay() - 1 || (i === 6 && new Date().getDay() === 0)
-                                    const isPast = i < (new Date().getDay() - 1)
-                                    return (
-                                        <div 
-                                            key={giorno} 
-                                            className={`day-cell ${isToday ? 'today' : ''} ${isPast ? 'past' : ''}`}
-                                        >
-                                            <span className="day-name">{giorno}</span>
-                                            <div className="day-indicator">
-                                                {isPast ? '✓' : isToday ? '●' : '○'}
+                ) : (
+                    <>
+                        {/* === OVERVIEW TAB === */}
+                        {activeTab === 'overview' && (
+                            <div className="overview-content">
+                                {/* Progress Section */}
+                                <section className="progress-section">
+                                    <h3>Il tuo progresso</h3>
+                                    <div className="progress-bar-container">
+                                        <div
+                                            className="progress-bar-fill"
+                                            style={{ width: `${progress}%` }}
+                                        ></div>
+                                        <span className="progress-value">{progress}%</span>
+                                    </div>
+                                    <div className="progress-controls">
+                                        <button onClick={() => updateProgress(Math.max(0, progress - 10))}>-10</button>
+                                        <button onClick={() => updateProgress(Math.min(100, progress + 10))}>+10</button>
+                                    </div>
+                                </section>
+
+                                {/* Quick Stats */}
+                                <section className="quick-stats">
+                                    <div className="stat-card">
+                                        <div className="stat-value">{memories.length}</div>
+                                        <div className="stat-label">Cose che NUR sa</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <div className="stat-value">{solutions.length}</div>
+                                        <div className="stat-label">Piani attivi</div>
+                                    </div>
+                                    <div className="stat-card">
+                                        <div className="stat-value">{insights.length}</div>
+                                        <div className="stat-label">Insights</div>
+                                    </div>
+                                </section>
+
+                                {/* Solutions/Plans */}
+                                {solutions.length > 0 && (
+                                    <section className="solutions-section">
+                                        <h3>📋 I tuoi piani</h3>
+                                        {solutions.map(solution => (
+                                            <div key={solution.id} className="solution-card">
+                                                <div className="solution-header">
+                                                    <span className="solution-title">{solution.title}</span>
+                                                    <span className={`solution-status ${solution.status}`}>
+                                                        {solution.status}
+                                                    </span>
+                                                </div>
+                                                {solution.steps && solution.steps.length > 0 && (
+                                                    <ul className="solution-steps">
+                                                        {(solution.steps as string[]).slice(0, 3).map((step, i) => (
+                                                            <li key={i}>{step}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                                <div className="solution-actions">
+                                                    {solution.status === 'proposta' && (
+                                                        <>
+                                                            <button
+                                                                className="btn-accept"
+                                                                onClick={() => updateSolutionStatus(solution.id, 'accettata')}
+                                                            >
+                                                                Accetta
+                                                            </button>
+                                                            <button
+                                                                className="btn-decline"
+                                                                onClick={() => updateSolutionStatus(solution.id, 'rifiutata')}
+                                                            >
+                                                                Rifiuta
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {solution.status === 'accettata' && (
+                                                        <button
+                                                            className="btn-start"
+                                                            onClick={() => updateSolutionStatus(solution.id, 'in_corso')}
+                                                        >
+                                                            Inizia
+                                                        </button>
+                                                    )}
+                                                    {solution.status === 'in_corso' && (
+                                                        <button
+                                                            className="btn-complete"
+                                                            onClick={() => updateSolutionStatus(solution.id, 'completata')}
+                                                        >
+                                                            Completa
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </section>
+                                )}
+
+                                {/* Latest Insight */}
+                                {insights.length > 0 && (
+                                    <section className="ai-insight-card">
+                                        <div className="insight-header">
+                                            <span className="insight-icon">💡</span>
+                                            <span className="insight-title">
+                                                {insights[0].title || 'Ultimo insight'}
+                                            </span>
+                                        </div>
+                                        <p className="insight-message">{insights[0].content}</p>
+                                    </section>
+                                )}
+
+                                {/* CTA */}
+                                <Link href={`/chat?area=${areaId}`} className="cta-chat">
+                                    💬 Parla con NUR di {config.nome.toLowerCase()}
+                                </Link>
+                            </div>
+                        )}
+
+                        {/* === MEMORIES TAB === */}
+                        {activeTab === 'memories' && (
+                            <div className="memories-content">
+                                <h3>🧠 Cosa NUR sa di te in quest&apos;area</h3>
+
+                                {memories.length === 0 ? (
+                                    <div className="empty-state">
+                                        <p>NUR non ha ancora memorie su di te in quest&apos;area.</p>
+                                        <p>Inizia a parlare con lei per costruire la tua storia!</p>
+                                        <Link href={`/chat?area=${areaId}`} className="cta-chat">
+                                            💬 Inizia una conversazione
+                                        </Link>
+                                    </div>
+                                ) : (
+                                    <div className="memories-list">
+                                        {memories.map(memory => (
+                                            <div key={memory.id} className="memory-card">
+                                                <div className="memory-icon">
+                                                    {getMemoryIcon(memory.memory_type)}
+                                                </div>
+                                                <div className="memory-content">
+                                                    <span className="memory-type">{memory.memory_type}</span>
+                                                    <p>{memory.content}</p>
+                                                    <span className="memory-importance">
+                                                        Importanza: {memory.importance}/10
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Journal Insights */}
+                                {insights.length > 0 && (
+                                    <>
+                                        <h3 style={{ marginTop: '24px' }}>📰 Insights dal Giornale</h3>
+                                        <div className="insights-list">
+                                            {insights.map(insight => (
+                                                <div key={insight.id} className="insight-card-small">
+                                                    <span className="insight-type">{insight.insight_type}</span>
+                                                    <p>{insight.content}</p>
+                                                    <span className="insight-date">
+                                                        {new Date(insight.created_at).toLocaleDateString('it-IT')}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* === JOURNEY TAB === */}
+                        {activeTab === 'journey' && (
+                            <div className="journey-content">
+                                {/* Situazione Attuale */}
+                                <section className="comparison-card current">
+                                    <h3>📍 Dove Sei Ora</h3>
+                                    {editingState === 'current' ? (
+                                        <div className="edit-form">
+                                            {config.domande.map((domanda, i) => (
+                                                <div key={i} className="field-row">
+                                                    <label>{domanda}</label>
+                                                    <input
+                                                        type="text"
+                                                        value={formData[domanda] || ''}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            [domanda]: e.target.value
+                                                        })}
+                                                    />
+                                                </div>
+                                            ))}
+                                            <div className="form-actions">
+                                                <button onClick={() => saveState('current')}>Salva</button>
+                                                <button onClick={() => setEditingState(null)}>Annulla</button>
                                             </div>
                                         </div>
-                                    )
-                                })}
-                            </div>
-                        </section>
-                        
-                        {/* Task List */}
-                        <section className="task-section">
-                            <h3 className="section-title">📍 Oggi</h3>
-                            <div className="task-list">
-                                {areaData?.tasks.filter(t => t.tipo === 'giornaliero').map(task => (
-                                    <div 
-                                        key={task.id} 
-                                        className={`task-item ${task.completato ? 'completed' : ''}`}
-                                        onClick={() => toggleTask(task.id)}
-                                    >
-                                        <div className="task-checkbox">
-                                            {task.completato ? '✓' : ''}
+                                    ) : (
+                                        <>
+                                            <div className="comparison-fields">
+                                                {config.domande.map((domanda, i) => (
+                                                    <div key={i} className="field-row">
+                                                        <span className="field-label">{domanda}</span>
+                                                        <span className="field-value">
+                                                            {lifeArea?.current_state?.[domanda] || '—'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button
+                                                className="edit-btn"
+                                                onClick={() => {
+                                                    setFormData(lifeArea?.current_state || {})
+                                                    setEditingState('current')
+                                                }}
+                                            >
+                                                Aggiorna
+                                            </button>
+                                        </>
+                                    )}
+                                </section>
+
+                                <div className="comparison-arrow">→</div>
+
+                                {/* Obiettivo */}
+                                <section className="comparison-card goal">
+                                    <h3>🎯 Dove Vuoi Arrivare</h3>
+                                    {editingState === 'goal' ? (
+                                        <div className="edit-form">
+                                            {config.domande.map((domanda, i) => (
+                                                <div key={i} className="field-row">
+                                                    <label>{domanda}</label>
+                                                    <input
+                                                        type="text"
+                                                        value={formData[domanda] || ''}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            [domanda]: e.target.value
+                                                        })}
+                                                    />
+                                                </div>
+                                            ))}
+                                            <div className="form-actions">
+                                                <button onClick={() => saveState('goal')}>Salva</button>
+                                                <button onClick={() => setEditingState(null)}>Annulla</button>
+                                            </div>
                                         </div>
-                                        <span className="task-text">{task.testo}</span>
-                                    </div>
-                                ))}
+                                    ) : (
+                                        <>
+                                            <div className="comparison-fields">
+                                                {config.domande.map((domanda, i) => (
+                                                    <div key={i} className="field-row">
+                                                        <span className="field-label">{domanda}</span>
+                                                        <span className="field-value">
+                                                            {lifeArea?.goal_state?.[domanda] || '—'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button
+                                                className="edit-btn"
+                                                onClick={() => {
+                                                    setFormData(lifeArea?.goal_state || {})
+                                                    setEditingState('goal')
+                                                }}
+                                            >
+                                                Definisci
+                                            </button>
+                                        </>
+                                    )}
+                                </section>
                             </div>
-                        </section>
-                        
-                        {/* Add Task */}
-                        <button className="add-task-btn">
-                            <span>+</span>
-                            <span>Aggiungi azione</span>
-                        </button>
-                    </div>
-                )}
-                
-                {/* === JOURNEY TAB === */}
-                {activeTab === 'journey' && (
-                    <div className="journey-content">
-                        {/* Situazione Attuale vs Obiettivo */}
-                        <section className="comparison-section">
-                            <div className="comparison-card current">
-                                <h3>📍 Dove Sei Ora</h3>
-                                <div className="comparison-fields">
-                                    {config.domande.slice(0, 3).map((domanda, i) => (
-                                        <div key={i} className="field-row">
-                                            <span className="field-label">{domanda}</span>
-                                            <span className="field-value">
-                                                {areaData?.situazioneAttuale[domanda] || '—'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <button className="edit-btn">Aggiorna</button>
-                            </div>
-                            
-                            <div className="comparison-arrow">→</div>
-                            
-                            <div className="comparison-card goal">
-                                <h3>🎯 Dove Vuoi Arrivare</h3>
-                                <div className="comparison-fields">
-                                    {config.domande.slice(0, 3).map((domanda, i) => (
-                                        <div key={i} className="field-row">
-                                            <span className="field-label">{domanda}</span>
-                                            <span className="field-value">
-                                                {areaData?.obiettivo[domanda] || '—'}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <button className="edit-btn">Definisci</button>
-                            </div>
-                        </section>
-                        
-                        {/* Timeline storica */}
-                        <section className="history-section">
-                            <h3 className="section-title">📜 Il Tuo Percorso</h3>
-                            <div className="timeline">
-                                <div className="timeline-item">
-                                    <div className="timeline-dot"></div>
-                                    <div className="timeline-content">
-                                        <span className="timeline-date">Oggi</span>
-                                        <p>Hai iniziato il tuo viaggio in quest&apos;area</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <p className="empty-state">
-                                Il tuo percorso si costruirà con ogni azione e conversazione. 
-                                Inizia a parlare con l&apos;AI per popolare questa timeline.
-                            </p>
-                        </section>
-                    </div>
+                        )}
+                    </>
                 )}
             </main>
-            
-            {/* Quick Chat Overlay */}
-            {showChat && (
-                <div className="quick-chat-overlay">
-                    <div className="quick-chat-panel">
-                        <div className="chat-panel-header">
-                            <span>💬 Parla di {config.nome}</span>
-                            <button onClick={() => setShowChat(false)}>✕</button>
-                        </div>
-                        <div className="chat-panel-body">
-                            <div className="chat-message bot">
-                                <p>
-                                    Ciao {userName}! Sono qui per aiutarti con {config.nome.toLowerCase()}. 
-                                    Raccontami: come sta andando? Cosa vorresti migliorare?
-                                </p>
-                            </div>
-                        </div>
-                        <div className="chat-panel-input">
-                            <input 
-                                type="text"
-                                placeholder="Scrivi qualcosa..."
-                                value={chatMessage}
-                                onChange={(e) => setChatMessage(e.target.value)}
-                            />
-                            <button className="send-btn">→</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            
+
             {/* FAB Chat */}
             <Link href={`/chat?area=${areaId}`} className="chat-fab">
                 <span className="fab-icon">💬</span>
