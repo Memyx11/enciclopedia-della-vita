@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -20,12 +20,6 @@ interface Message {
     }
 }
 
-interface Conversation {
-    id: string
-    title?: string
-    area_related?: string
-}
-
 function ChatContent() {
     const { user, isLoaded } = useUser()
     const searchParams = useSearchParams()
@@ -38,100 +32,96 @@ function ChatContent() {
     const [currentArea, setCurrentArea] = useState<string | null>(null)
     const [insightsCount, setInsightsCount] = useState(0)
     const chatRef = useRef<HTMLDivElement>(null)
-    const initRef = useRef(false)
 
-    // Inizializza utente se necessario
-    const initializeUserIfNeeded = useCallback(async () => {
-        if (!user || initRef.current) return
-        initRef.current = true
-
-        try {
-            // Controlla se l'utente esiste già
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('clerk_user_id', user.id)
-                .maybeSingle()
-
-            if (!profile) {
-                // Inizializza l'utente
-                await fetch('/api/user', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: user.id,
-                        action: 'init',
-                        data: {
-                            email: user.emailAddresses[0]?.emailAddress,
-                            fullName: user.fullName || user.firstName
-                        }
-                    })
-                })
-            }
-        } catch (error) {
-            console.error('Init error:', error)
-        }
-    }, [user])
-
-    // Carica messaggi esistenti
-    const loadMessages = useCallback(async () => {
-        if (!user) return
-
-        try {
-            // Prendi l'ultima conversazione attiva
-            const { data: conv } = await supabase
-                .from('conversations')
-                .select('id, title, area_related')
-                .eq('clerk_user_id', user.id)
-                .eq('status', 'active')
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-
-            if (conv) {
-                setConversationId(conv.id)
-                setCurrentArea(conv.area_related || null)
-
-                // Carica i messaggi
-                const { data: msgs } = await supabase
-                    .from('messages')
-                    .select('*')
-                    .eq('conversation_id', conv.id)
-                    .order('created_at', { ascending: true })
-                    .limit(100)
-
-                if (msgs && msgs.length > 0) {
-                    const formattedMessages = msgs.map(msg => ({
-                        id: msg.id,
-                        content: msg.content,
-                        role: msg.role as 'user' | 'assistant',
-                        timestamp: new Date(msg.created_at).toLocaleTimeString('it-IT', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        }),
-                        metadata: {
-                            sentiment: msg.sentiment,
-                            area_detected: msg.area_type
-                        }
-                    }))
-                    setMessages(formattedMessages)
-                }
-            }
-        } catch (err) {
-            console.error('Load error:', err)
-        }
-
-        setLoading(false)
-    }, [user])
-
+    // Carica dati utente e messaggi
     useEffect(() => {
-        if (isLoaded && user) {
-            initializeUserIfNeeded()
-            loadMessages()
-        } else if (isLoaded && !user) {
+        if (!isLoaded) return
+
+        if (!user) {
             setLoading(false)
+            return
         }
-    }, [isLoaded, user, initializeUserIfNeeded, loadMessages])
+
+        const loadData = async () => {
+            try {
+                // 1. Inizializza utente se necessario
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('clerk_user_id', user.id)
+                    .maybeSingle()
+
+                if (!profile) {
+                    await fetch('/api/user', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: user.id,
+                            action: 'init',
+                            data: {
+                                email: user.emailAddresses[0]?.emailAddress,
+                                fullName: user.fullName || user.firstName
+                            }
+                        })
+                    })
+                }
+
+                // 2. Carica l'ultima conversazione attiva
+                const { data: conv, error: convError } = await supabase
+                    .from('conversations')
+                    .select('id, title, area_related')
+                    .eq('clerk_user_id', user.id)
+                    .eq('status', 'active')
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle()
+
+                if (convError) {
+                    console.error('Conv load error:', convError)
+                }
+
+                if (conv) {
+                    setConversationId(conv.id)
+                    setCurrentArea(conv.area_related || null)
+
+                    // 3. Carica i messaggi della conversazione
+                    const { data: msgs, error: msgsError } = await supabase
+                        .from('messages')
+                        .select('*')
+                        .eq('conversation_id', conv.id)
+                        .order('created_at', { ascending: true })
+                        .limit(100)
+
+                    if (msgsError) {
+                        console.error('Messages load error:', msgsError)
+                    }
+
+                    if (msgs && msgs.length > 0) {
+                        const formattedMessages = msgs.map(msg => ({
+                            id: msg.id,
+                            content: msg.content,
+                            role: msg.role as 'user' | 'assistant',
+                            timestamp: new Date(msg.created_at).toLocaleTimeString('it-IT', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }),
+                            metadata: {
+                                sentiment: msg.sentiment,
+                                area_detected: msg.area_type
+                            }
+                        }))
+                        setMessages(formattedMessages)
+                    }
+                }
+            } catch (err) {
+                console.error('Load error:', err)
+            } finally {
+                setLoading(false)
+            }
+        }
+
+        loadData()
+    }, [isLoaded, user])
 
     // Gestisci parametri URL (context da altre pagine)
     useEffect(() => {
