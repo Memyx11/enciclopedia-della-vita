@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -26,7 +26,7 @@ interface Conversation {
     area_related?: string
 }
 
-export default function ChatPage() {
+function ChatContent() {
     const { user, isLoaded } = useUser()
     const searchParams = useSearchParams()
     const [messages, setMessages] = useState<Message[]>([])
@@ -476,5 +476,25 @@ export default function ChatPage() {
                 </div>
             </footer>
         </div>
+    )
+}
+
+function ChatLoading() {
+    return (
+        <div className="chat-page">
+            <div className="bg-gradient"></div>
+            <div className="loading-state" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="loading-spinner"></div>
+                <p>Caricamento...</p>
+            </div>
+        </div>
+    )
+}
+
+export default function ChatPage() {
+    return (
+        <Suspense fallback={<ChatLoading />}>
+            <ChatContent />
+        </Suspense>
     )
 }
