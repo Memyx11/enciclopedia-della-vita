@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enciclopedia della Vita - Conoscenza Pratica per Vivere Meglio</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+        }
+
+        /* HEADER FISSO */
+        header {
+            background: #000;
+            border-bottom: 2px solid #667eea;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .user-area {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid #667eea;
+            color: #667eea;
+        }
+
+        /* NAVIGAZIONE PRINCIPALE */
+        nav {
+            background: #111;
+            border-bottom: 1px solid #222;
+        }
+
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            overflow-x: auto;
+        }
+
+        .nav-item {
+            position: relative;
+            padding: 15px 25px;
+            color: #e0e0e0;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: #1a1a1a;
+            border-bottom-color: #667eea;
+        }
+
+        .nav-item.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+
+        /* DROPDOWN MENU */
+        .dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: #1a1a1a;
+            min-width: 300px;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+            z-index: 999;
+        }
+
+        .nav-item:hover .dropdown {
+            display: block;
+        }
+
+        .dropdown-section {
+            padding: 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        .dropdown-section:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-title {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .dropdown-item {
+            padding: 8px 15px;
+            color: #e0e0e0;
+            text-decoration: none;
+            display: block;
+            border-radius: 5px;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-item:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        /* HERO SECTION */
+        .hero {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            padding: 80px 30px;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 3.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .hero p {
+            font-size: 1.3em;
+            color: #a0a0a0;
+            max-width: 700px;
+            margin: 0 auto 40px;
+        }
+
+        .search-box {
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 18px 25px;
+            font-size: 1.1em;
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 50px;
+            color: #e0e0e0;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .search-box input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        /* SEZIONI PRINCIPALI */
+        .main-content {
+            max-width: 1400px;
+            margin: 60px auto;
+            padding: 0 30px;
+        }
+
+        .priority-section {
+            margin-bottom: 80px;
+        }
+
+        .priority-label {
+            display: inline-block;
+            padding: 8px 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .section-description {
+            font-size: 1.1em;
+            color: #a0a0a0;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 15px;
+            padding: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: #667eea;
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.2);
+        }
+
+        .card-title {
+            font-size: 1.5em;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .card-items {
+            list-style: none;
+        }
+
+        .card-items li {
+            padding: 8px 0;
+            color: #c0c0c0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .card-items li:last-child {
+            border-bottom: none;
+        }
+
+        .card-items li:hover {
+            color: #667eea;
+        }
+
+        footer {
+            background: #000;
+            border-top: 2px solid #667eea;
+            padding: 40px 30px;
+            text-align: center;
+            margin-top: 100px;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.2em; }
+            .nav-content { flex-direction: column; }
+            .dropdown { position: static; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <header>
+        <div class="header-content">
+            <a href="/" class="logo">📖 Enciclopedia della Vita</a>
+            <div class="user-area" id="userArea">
+            </div>
+        </div>
+    </header>
+
+    <!-- NAVIGAZIONE -->
+    <nav>
+        <div class="nav-content">
+            <div class="nav-item">
+                Sopravvivenza Base
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Salute Fisica</div>
+                        <a href="/salute/alimentazione" class="dropdown-item">Alimentazione</a>
+                        <a href="/salute/sonno" class="dropdown-item">Sonno</a>
+                        <a href="/salute/movimento" class="dropdown-item">Movimento</a>
+                        <a href="/salute/igiene" class="dropdown-item">Igiene</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Soldi & Lavoro</div>
+                        <a href="/soldi/guadagnare" class="dropdown-item">Guadagnare</a>
+                        <a href="/soldi/gestire" class="dropdown-item">Gestire</a>
+                        <a href="/soldi/emergenze" class="dropdown-item">Emergenze</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Casa & Sicurezza</div>
+                        <a href="/casa/abitare" class="dropdown-item">Abitare</a>
+                        <a href="/casa/manutenzione" class="dropdown-item">Manutenzione</a>
+                        <a href="/casa/sicurezza" class="dropdown-item">Sicurezza</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-item">
+                Cibo
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Ricette Base</div>
+                        <a href="/cibo/5min" class="dropdown-item">5 minuti</a>
+                        <a href="/cibo/15min" class="dropdown-item">15 minuti</a>
+                        <a href="/cibo/30min" class="dropdown-item">30 minuti</a>
+                        <a href="/cibo/1h" class="dropdown-item">1 ora+</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Per Budget</div>
+                        <a href="/cibo/economico" class="dropdown-item">Meno di 2€</a>
+                        <a href="/cibo/medio" class="dropdown-item">2-5€</a>
+                        <a href="/cibo/premium" class="dropdown-item">5-10€</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Cucina Pratica</div>
+                        <a href="/cibo/spesa" class="dropdown-item">Spesa intelligente</a>
+                        <a href="/cibo/conservazione" class="dropdown-item">Conservazione</a>
+                        <a href="/cibo/meal-prep" class="dropdown-item">Meal Prep</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-item">
+                Quotidiano
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Routine</div>
+                        <a href="/routine/mattina" class="dropdown-item">Mattina Efficace</a>
+                        <a href="/routine/produttivita" class="dropdown-item">Produttività</a>
+                        <a href="/routine/sera" class="dropdown-item">Sera Rilassante</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Relazioni</div>
+                        <a href="/relazioni/famiglia" class="dropdown-item">Famiglia</a>
+                        <a href="/relazioni/coppia" class="dropdown-item">Amore & Coppia</a>
+                        <a href="/relazioni/amicizie" class="dropdown-item">Amicizie</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-item">
+                Sport & Abilità
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Fitness</div>
+                        <a href="/sport/iniziare" class="dropdown-item">Iniziare da Zero</a>
+                        <a href="/sport/routine" class="dropdown-item">Routine Sostenibili</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Abilità Pratiche</div>
+                        <a href="/skill/tecnologia" class="dropdown-item">Tecnologia</a>
+                        <a href="/skill/riparazioni" class="dropdown-item">Riparazioni</a>
+                        <a href="/skill/creativita" class="dropdown-item">Creatività</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-item">
+                Conoscenza
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Storia</div>
+                        <a href="/storia/antica" class="dropdown-item">Antica</a>
+                        <a href="/storia/moderna" class="dropdown-item">Moderna</a>
+                        <a href="/storia/contemporanea" class="dropdown-item">Contemporanea</a>
+                    </div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Politica</div>
+                        <a href="/politica/sistemi" class="dropdown-item">Come Funziona</a>
+                        <a href="/politica/attualita" class="dropdown-item">Attualità</a>
+                        <a href="/politica/fact-check" class="dropdown-item">Fact-Checking</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-item">
+                Spiritualità
+                <div class="dropdown">
+                    <div class="dropdown-section">
+                        <div class="dropdown-title">Fede & Filosofia</div>
+                        <a href="/fede/religioni" class="dropdown-item">Religioni</a>
+                        <a href="/fede/filosofia" class="dropdown-item">Filosofia</a>
+                        <a href="/fede/crescita" class="dropdown-item">Crescita Interiore</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <div class="hero">
+        <h1>Tutto quello che ti serve per vivere meglio</h1>
+        <p>Conoscenza pratica, verificata e organizzata per priorità. Dalla sopravvivenza quotidiana alla crescita personale.</p>
+        <div class="search-box">
+            <input type="text" placeholder="Cerca qualsiasi cosa... (es. pasta, come dormire meglio, trovare lavoro)">
+        </div>
+    </div>
+
+    <!-- CONTENUTO PRINCIPALE -->
+    <div class="main-content">
+        <!-- LIVELLO 1: PRIORITÀ MASSIMA -->
+        <div class="priority-section">
+            <span class="priority-label">PRIORITÀ MASSIMA</span>
+            <h2 class="section-title">Bisogni Fondamentali</h2>
+            <p class="section-description">
+                Le basi per sopravvivere e funzionare ogni giorno. Parti da qui se non sai da dove iniziare.
+            </p>
+            
+            <div class="cards-grid">
+                <div class="card">
+                    <h3 class="card-title">Salute Fisica</h3>
+                    <ul class="card-items">
+                        <li><a href="pagine/salute/alimentazione.html" style="color: inherit; text-decoration: none;">Cosa mangiare davvero</a></li>
+                        <li><a href="pagine/salute/sonno.html" style="color: inherit; text-decoration: none;">Come dormire bene</a></li>
+                        <li><a href="pagine/salute/movimento.html" style="color: inherit; text-decoration: none;">Movimento minimo vitale</a></li>
+                        <li><a href="pagine/salute/igiene.html" style="color: inherit; text-decoration: none;">Igiene essenziale</a></li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Soldi & Lavoro</h3>
+                    <ul class="card-items">
+                        <li><a href="pagine/soldi/guadagnare.html" style="color: inherit; text-decoration: none;">Trovare e mantenere lavoro</a></li>
+                        <li><a href="pagine/soldi/gestire.html" style="color: inherit; text-decoration: none;">Gestire budget</a></li>
+                        <li><a href="pagine/soldi/risparmiare.html" style="color: inherit; text-decoration: none;">Risparmiare efficacemente</a></li>
+                        <li><a href="pagine/soldi/emergenze.html" style="color: inherit; text-decoration: none;">Emergenze economiche</a></li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Casa & Sicurezza</h3>
+                    <ul class="card-items">
+                        <li><a href="pagine/casa/abitare.html" style="color: inherit; text-decoration: none;">Affitto vs Mutuo</a></li>
+                        <li><a href="pagine/casa/manutenzione.html" style="color: inherit; text-decoration: none;">Riparazioni base</a></li>
+                        <li><a href="pagine/casa/sicurezza.html" style="color: inherit; text-decoration: none;">Sicurezza personale</a></li>
+                        <li><a href="pagine/casa/convivenza.html" style="color: inherit; text-decoration: none;">Convivenza sana</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- LIVELLO 2: CIBO -->
+        <div class="priority-section">
+            <span class="priority-label">ALTA PRIORITÀ</span>
+            <h2 class="section-title">Cibo - Ricette & Nutrizione</h2>
+            <p class="section-description">
+                Mangiare bene con poco tempo e pochi soldi. Ricette testate, non teoria.
+            </p>
+            
+            <div class="cards-grid">
+                <div class="card">
+                    <h3 class="card-title">Per Tempo</h3>
+                    <ul class="card-items">
+                        <li>5 minuti - Emergenze</li>
+                        <li>15 minuti - Standard</li>
+                        <li>30 minuti - Quando hai tempo</li>
+                        <li>1 ora+ - Weekend</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Per Budget</h3>
+                    <ul class="card-items">
+                        <li>Meno di 2€ a pasto</li>
+                        <li>2-5€ - Bilanciato</li>
+                        <li>5-10€ - Lusso accessibile</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Cucina Pratica</h3>
+                    <ul class="card-items">
+                        <li>Spesa settimanale intelligente</li>
+                        <li>Meal prep domenicale</li>
+                        <li>Conservare senza sprechi</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ALTRE SEZIONI SEGUONO LO STESSO PATTERN -->
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+        <p style="font-size: 1.2em; color: #667eea; margin-bottom: 10px;">
+            Enciclopedia della Vita
+        </p>
+        <p style="color: #666;">
+            Conoscenza indipendente, verificata e organizzata per priorità reale
+        </p>
+    </footer>
+
+    <script>
+        // Search functionality
+        document.querySelector('.search-box input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const query = this.value.trim();
+                if (query) {
+                    window.location.href = `/cerca?q=${encodeURIComponent(query)}`;
+                }
+            }
+        });
+    </script>
+
+    <script>
+    // Check se utente è loggato
+    const utenteCorrente = localStorage.getItem('utenteCorrente');
+    const userArea = document.getElementById('userArea');
+    
+    if (utenteCorrente) {
+        // Mostra profilo utente
+        userArea.innerHTML = `
+            <span style="color: #a0a0a0;">👤 ${utenteCorrente}</span>
+            <a href="pagine/la-mia-vita.html" class="btn btn-primary">La Mia Vita</a>
+            <button onclick="logout()" class="btn btn-secondary">Esci</button>
+        `;
+    } else {
+        // Mostra bottoni login
+        userArea.innerHTML = `
+            <a href="login.html" class="btn btn-secondary">Accedi</a>
+            <a href="login.html" class="btn btn-primary">Registrati</a>
+        `;
+    }
+    
+    function logout() {
+        if (confirm('Vuoi davvero uscire?')) {
+            localStorage.removeItem('utenteCorrente');
+            window.location.reload();
+        }
+    }
+    </script>
+
+</body>
+</html>

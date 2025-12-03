@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assistente AI Premium v2.0</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#0a0a0a 0%,#1a1a2e 50%,#16213e 100%);min-height:100vh;color:#e0e0e0;display:flex;flex-direction:column}
+.header{background:rgba(26,26,26,0.8);backdrop-filter:blur(20px);border-bottom:1px solid rgba(102,126,234,0.2);padding:20px 40px;position:sticky;top:0;z-index:100;box-shadow:0 4px 30px rgba(0,0,0,0.3)}
+.header-content{max-width:1400px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.logo{display:flex;align-items:center;gap:12px;font-size:1.5em;font-weight:700;background:linear-gradient(135deg,#667eea,#764ba2,#f093fb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.nav-links{display:flex;gap:30px;align-items:center}
+.nav-links a{color:#e0e0e0;text-decoration:none;font-size:0.95em;font-weight:500;transition:all 0.3s;position:relative}
+.nav-links a::after{content:'';position:absolute;bottom:-5px;left:0;width:0;height:2px;background:linear-gradient(90deg,#667eea,#764ba2);transition:width 0.3s}
+.nav-links a:hover::after{width:100%}
+.nav-links a:hover{color:#667eea}
+.status-bar{max-width:1400px;margin:30px auto 0;padding:0 40px;display:flex;justify-content:space-between;align-items:center}
+.status-indicator{display:flex;align-items:center;gap:12px;background:rgba(26,26,26,0.6);backdrop-filter:blur(10px);padding:12px 24px;border-radius:50px;border:1px solid rgba(102,126,234,0.3);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+.status-dot{width:12px;height:12px;border-radius:50%;background:#51cf66;box-shadow:0 0 20px rgba(81,207,102,0.6);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.7;transform:scale(0.95)}}
+.status-dot.thinking{background:#ffd43b;box-shadow:0 0 20px rgba(255,212,59,0.6)}
+.status-dot.error{background:#ff6b6b;box-shadow:0 0 20px rgba(255,107,107,0.6);animation:none}
+.status-text{font-size:0.9em;font-weight:500}
+.user-badge{background:rgba(26,26,26,0.6);backdrop-filter:blur(10px);padding:12px 24px;border-radius:50px;border:1px solid rgba(102,126,234,0.3);font-size:0.9em;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9em}
+.reset-btn{background:rgba(255,107,107,0.2);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);padding:8px 16px;border-radius:12px;font-size:0.85em;cursor:pointer;transition:all 0.3s;font-weight:600}
+.reset-btn:hover{background:rgba(255,107,107,0.3);transform:translateY(-2px)}
+.version-badge{background:rgba(102,126,234,0.2);color:#667eea;border:1px solid rgba(102,126,234,0.3);padding:4px 12px;border-radius:8px;font-size:0.75em;font-weight:600}
+.container{max-width:1400px;margin:30px auto;padding:0 40px 40px;flex:1;display:flex;flex-direction:column}
+#chatContainer{flex:1;background:rgba(26,26,26,0.5);backdrop-filter:blur(20px);border-radius:24px;border:1px solid rgba(102,126,234,0.2);padding:40px;overflow-y:auto;margin-bottom:30px;min-height:500px;max-height:650px;box-shadow:0 20px 60px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.05)}
+#chatContainer::-webkit-scrollbar{width:8px}
+#chatContainer::-webkit-scrollbar-track{background:rgba(255,255,255,0.05);border-radius:10px}
+#chatContainer::-webkit-scrollbar-thumb{background:linear-gradient(135deg,#667eea,#764ba2);border-radius:10px}
+.message{margin-bottom:24px;display:flex;animation:slideIn 0.4s cubic-bezier(0.25,0.46,0.45,0.94)}
+@keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.message.user{justify-content:flex-end}
+.message-bubble{max-width:75%;padding:18px 24px;border-radius:20px;line-height:1.6;position:relative;box-shadow:0 8px 24px rgba(0,0,0,0.2)}
+.message.user .message-bubble{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-bottom-right-radius:6px;color:white;box-shadow:0 8px 24px rgba(102,126,234,0.4)}
+.message.bot .message-bubble{background:rgba(42,42,42,0.8);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.1);border-bottom-left-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.3)}
+.message-meta{font-size:0.75em;opacity:0.7;margin-top:8px;display:flex;align-items:center;gap:6px}
+.welcome{text-align:center;padding:60px 40px;opacity:0.9}
+.welcome h2{font-size:2em;margin-bottom:16px;background:linear-gradient(135deg,#667eea,#764ba2,#f093fb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.welcome p{font-size:1.1em;color:#888;margin-bottom:12px}
+.welcome .highlight{color:#667eea;font-weight:600}
+.input-area{background:rgba(26,26,26,0.8);backdrop-filter:blur(20px);border:1px solid rgba(102,126,234,0.3);border-radius:20px;padding:16px;display:flex;gap:16px;box-shadow:0 12px 40px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.1);transition:all 0.3s}
+.input-area:focus-within{border-color:rgba(102,126,234,0.6);box-shadow:0 12px 40px rgba(102,126,234,0.3),inset 0 1px 0 rgba(255,255,255,0.1)}
+#messageInput{flex:1;background:transparent;border:none;color:white;font-size:16px;font-family:inherit;padding:12px 8px;outline:none}
+#messageInput::placeholder{color:#666}
+#sendButton{padding:14px 36px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 15px rgba(102,126,234,0.4)}
+#sendButton:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 20px rgba(102,126,234,0.6)}
+#sendButton:active:not(:disabled){transform:translateY(0)}
+#sendButton:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+@media(max-width:768px){.header-content,.status-bar,.container{padding-left:20px;padding-right:20px}.message-bubble{max-width:85%}.welcome h2{font-size:1.5em}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-content">
+    <div class="logo">
+      <span>🤖</span>
+      <span>Assistente AI</span>
+      <span class="version-badge">v2.0 INTELLIGENTE</span>
+    </div>
+    <nav class="nav-links">
+      <button class="reset-btn" onclick="resetChat()">🔄 Reset Chat</button>
+      <a href="pagine/le-mie-soluzioni.html">💡 Soluzioni</a>
+      <a href="pagine/la-mia-vita.html">Dashboard</a>
+      <a href="index.html">Enciclopedia</a>
+    </nav>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-indicator">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Pronto</span>
+  </div>
+  <div class="user-badge">
+    <div class="user-avatar" id="userAvatar">M</div>
+    <span id="userName">Memyx11</span>
+  </div>
+</div>
+
+<div class="container">
+  <div id="chatContainer">
+    <div class="welcome">
+      <h2>👋 Benvenuto!</h2>
+      <p>Sono il tuo assistente personale <strong>INTELLIGENTE</strong> dell'Enciclopedia della Vita.</p>
+      <p class="highlight">Ora analizzo i tuoi dati per darti consigli PRECISI e NUMERICI!</p>
+    </div>
+  </div>
+  
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Scrivi un messaggio..." autocomplete="off"/>
+    <button id="sendButton" onclick="sendMessage()">Invia</button>
+  </div>
+</div>
+
+<script>
+let conv = [];
+const utente = localStorage.getItem('utenteCorrente') || 'Ospite';
+const utenti = JSON.parse(localStorage.getItem('utenti') || '{}');
+const dati = utenti[utente]?.dati || {};
+
+// ============================================
+// FUNZIONE ANALISI INTELLIGENTE DATI
+// ============================================
+function analizzaDatiUtente() {
+  const analisi = {
+    areeCompilate: [],
+    areeCritiche: [],
+    problemiUrgenti: [],
+    obiettivi: [],
+    numeri: {}
+  };
+  
+  const mappaNomi = {
+    salute: 'Salute Fisica',
+    soldi: 'Finanze',
+    relazioni: 'Relazioni',
+    lavoro: 'Carriera',
+    crescita: 'Crescita Personale',
+    hobby: 'Hobby e Interessi',
+    casa: 'Casa e Ambiente',
+    sociale: 'Vita Sociale',
+    spirituale: 'Benessere Interiore',
+    futuro: 'Progetti Futuri'
+  };
+  
+  // Analizza ogni area
+  for (const [id, nome] of Object.entries(mappaNomi)) {
+    const areaDati = dati[id];
+    if (!areaDati || Object.keys(areaDati).length === 0) {
+      analisi.areeCritiche.push(nome);
+      continue;
+    }
+    
+    analisi.areeCompilate.push(nome);
+    
+    // SALUTE - Analisi specifica
+    if (id === 'salute' && areaDati.peso_obiettivo) {
+      const obiettivo = areaDati.peso_obiettivo;
+      if (obiettivo.includes('+')) {
+        const kg = obiettivo.match(/\d+/)?.[0];
+        analisi.numeri.peso_guadagnare = kg;
+        analisi.problemiUrgenti.push(`Peso: Aumentare ${kg}kg`);
+      } else if (obiettivo.includes('-')) {
+        const kg = obiettivo.match(/\d+/)?.[0];
+        analisi.numeri.peso_perdere = kg;
+        analisi.problemiUrgenti.push(`Peso: Perdere ${kg}kg`);
+      }
+    }
+    
+    // FINANZE - Analisi specifica
+    if (id === 'soldi') {
+      if (areaDati.debiti) {
+        const match = areaDati.debiti.match(/(\d+)/);
+        if (match) {
+          analisi.numeri.debiti = match[1];
+          analisi.problemiUrgenti.push(`Debiti: €${match[1]}`);
+        }
+      }
+      if (areaDati.risparmio === '0%' || areaDati.risparmio === '0') {
+        analisi.problemiUrgenti.push('Risparmio: 0%');
+      }
+    }
+    
+    // OBIETTIVI - Estrai da tutte le aree
+    if (areaDati.obiettivi) {
+      analisi.obiettivi.push(`${nome}: ${areaDati.obiettivi}`);
+    }
+  }
+  
+  return analisi;
+}
+
+// ============================================
+// GENERA PROMPT INTELLIGENTE
+// ============================================
+function generaPromptIntelligente() {
+  const analisi = analizzaDatiUtente();
+  
+  let prompt = `SEI: Assistente personale Enciclopedia della Vita
+
+UTENTE: ${utente}
+
+ANALISI SITUAZIONE:
+`;
+  
+  if (analisi.areeCompilate.length > 0) {
+    prompt += `✅ Aree compilate: ${analisi.areeCompilate.join(', ')}\n`;
+  }
+  
+  if (analisi.areeCritiche.length > 0) {
+    prompt += `⚠️ Aree mancanti: ${analisi.areeCritiche.join(', ')}\n`;
+  }
+  
+  if (analisi.problemiUrgenti.length > 0) {
+    prompt += `\n🚨 PROBLEMI URGENTI:\n`;
+    analisi.problemiUrgenti.forEach(p => prompt += `- ${p}\n`);
+  }
+  
+  if (analisi.obiettivi.length > 0) {
+    prompt += `\n🎯 OBIETTIVI DICHIARATI:\n`;
+    analisi.obiettivi.forEach(o => prompt += `- ${o}\n`);
+  }
+  
+  prompt += `\n📊 DATI COMPLETI:\n${JSON.stringify(dati, null, 2)}
+
+REGOLE ASSOLUTE:
+1. ⏱️ Max 150 parole per risposta
+2. 🔢 USA numeri specifici dai dati (es: "5000€ debiti" NON "problemi finanziari")
+3. 📋 Formato bullet point numerato
+4. 🎯 Identifica max 3 priorità alla volta
+5. ⚡ Suggerimenti ACTIONABLE con numeri (NON "mangia meglio" MA "surplus 300 cal/giorno")
+6. 🔗 Collega aree correlate (es: energia bassa + alimentazione)
+
+FORMATO RISPOSTA:
+🚨 ANALISI PRIORITÀ:
+
+1. [AREA] - [problema con numeri] → [soluzione con azione specifica]
+2. [AREA] - [problema con numeri] → [soluzione con azione specifica]  
+3. [AREA] - [problema con numeri] → [soluzione con azione specifica]
+
+Quale approfondisci?
+
+TONO: Diretto, pratico, numeri sempre, zero fuffa.`;
+
+  return prompt;
+}
+
+// ============================================
+// SALVA SOLUZIONE
+// ============================================
+function salvaSoluzione(testo, botMessageElement) {
+  const utenti = JSON.parse(localStorage.getItem('utenti') || '{}');
+  if (!utenti[utente]) utenti[utente] = {dati: {}};
+  if (!utenti[utente].soluzioni) utenti[utente].soluzioni = [];
+  const righe = testo.split('\n').filter(r => r.trim());
+  const titolo = righe[0] ? righe[0].substring(0, 80) : 'Soluzione senza titolo';
+  const steps = righe.filter(r => /^[\d\-•]\s/.test(r.trim())).map(r => r.replace(/^[\d\-•]\s+/, '').trim());
+  const soluzione = {
+    id: Date.now(),
+    titolo: titolo.replace(/[🚨📋🎯⚡🔗⏱️🔢]/g, '').trim(),
+    testo: testo,
+    steps: steps.length > 0 ? steps : [],
+    status: 'proposta',
+    area: 'Generale',
+    dataCreazione: new Date().toISOString(),
+    progress: 0
+  };
+  utenti[utente].soluzioni.push(soluzione);
+  localStorage.setItem('utenti', JSON.stringify(utenti));
+  const btnContainer = botMessageElement.querySelector('.save-solution-btn');
+  if (btnContainer) {
+    btnContainer.innerHTML = '<a href="pagine/le-mie-soluzioni.html" style="color:#51cf66;text-decoration:none;font-weight:600;">✅ Soluzione salvata - Visualizza</a>';
+  }
+  console.log('✅ Soluzione salvata:', soluzione);
+}
+// ============================================
+// INIT
+// ============================================
+function init() {
+  document.getElementById('userName').textContent = utente;
+  const avatar = utente.charAt(0).toUpperCase();
+  document.getElementById('userAvatar').textContent = avatar;
+  
+  // Carica conversazione salvata
+  if (utenti[utente]?.conversazioneMistral) {
+    conv = utenti[utente].conversazioneMistral;
+    const container = document.getElementById('chatContainer');
+    container.innerHTML = '';
+    conv.forEach(m => renderMessage(m.text, m.type));
+  }
+  
+  document.getElementById('messageInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  
+  document.getElementById('messageInput').focus();
+  
+  console.log('🚀 Chatbot v2.0 INTELLIGENTE caricato!');
+  console.log('📊 Analisi dati:', analizzaDatiUtente());
+}
+
+// ============================================
+// SEND MESSAGE
+// ============================================
+async function sendMessage() {
+  const input = document.getElementById('messageInput');
+  const text = input.value.trim();
+  if (!text) return;
+  
+  addMessage(text, 'user');
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('sendButton').disabled = true;
+  updateStatus('thinking', 'Sto analizzando...');
+  
+  try {
+    const systemPrompt = generaPromptIntelligente();
+    const msgs = conv.slice(-8).map(m => ({
+      role: m.type === 'user' ? 'user' : 'assistant',
+      content: m.text
+    }));
+    
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: 'mistral',
+        messages: [
+          {role: 'system', content: systemPrompt},
+          ...msgs,
+          {role: 'user', content: text}
+        ],
+        stream: false
+      })
+    });
+    
+    const data = await response.json();
+    addMessage(data.message.content, 'bot');
+    updateStatus('ready', 'Pronto');
+    
+  } catch(error) {
+    console.error(error);
+    addMessage('⚠️ Errore di connessione. Riprova tra qualche secondo.', 'bot');
+    updateStatus('error', 'Errore connessione');
+  }
+  
+  input.disabled = false;
+  document.getElementById('sendButton').disabled = false;
+  input.focus();
+}
+
+// ============================================
+// RESET CHAT
+// ============================================
+function resetChat() {
+  if (confirm('🔄 Vuoi cancellare tutta la conversazione e ricominciare da zero?')) {
+    conv = [];
+    saveConversation();
+    location.reload();
+  }
+}
+
+// ============================================
+// HELPERS
+// ============================================
+function addMessage(text, type) {
+  const msg = {
+    text: text,
+    type: type,
+    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})
+  };
+  conv.push(msg);
+  renderMessage(text, type, msg.timestamp);
+  saveConversation();
+  
+  const container = document.getElementById('chatContainer');
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderMessage(text, type, timestamp) {
+  const container = document.getElementById('chatContainer');
+  const welcome = container.querySelector('.welcome');
+  if (welcome) welcome.remove();
+  const div = document.createElement('div');
+  div.className = 'message ' + type;
+  let bubble = `<div class="message-bubble">${text}<div class="message-meta"><span>${type === 'user' ? '👤' : '🤖'}</span><span>${timestamp || new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</span></div>`;
+  if (type === 'bot') {
+    bubble += `<button class="save-solution-btn" onclick="salvaSoluzione(\`${text.replace(/`/g, '\\`')}\`, this.closest('.message'))">💾 Salva soluzione</button>`;
+  }
+  bubble += `</div>`;
+  div.innerHTML = bubble;
+  container.appendChild(div);
+}
+
+function updateStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  dot.className = 'status-dot';
+  if (state === 'thinking') dot.classList.add('thinking');
+  if (state === 'error') dot.classList.add('error');
+  statusText.textContent = text;
+}
+
+function saveConversation() {
+  const utenti = JSON.parse(localStorage.getItem('utenti') || '{}');
+  if (!utenti[utente]) utenti[utente] = {dati: {}};
+  utenti[utente].conversazioneMistral = conv;
+  localStorage.setItem('utenti', JSON.stringify(utenti));
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>

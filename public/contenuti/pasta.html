@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pasta - Enciclopedia della Vita</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Georgia', serif;
+            background-color: #000;
+            color: #fff;
+            line-height: 1.8;
+        }
+
+        header {
+            background-color: #000;
+            border-bottom: 3px solid #667eea;
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .logo {
+            text-align: center;
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .hero {
+            position: relative;
+            height: 70vh;
+            background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.7)), 
+                        url('https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=1600') center/cover;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .hero-content h1 {
+            font-size: 5em;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 10px rgba(0,0,0,0.9);
+            color: #667eea;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        .hero-content p {
+            font-size: 1.5em;
+            max-width: 800px;
+            margin: 0 auto;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.9);
+            animation: fadeInUp 1s ease-out 0.3s both;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+
+        .save-button {
+            position: fixed;
+            top: 100px;
+            right: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            z-index: 99;
+        }
+
+        .save-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+
+        .video-section {
+            margin: 60px 0;
+            position: relative;
+        }
+
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            border: 4px solid #667eea;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+            border-radius: 15px;
+        }
+
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+        }
+
+        .caption {
+            margin-top: 30px;
+            padding: 25px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+            border-left: 5px solid #667eea;
+            font-size: 1.2em;
+            border-radius: 10px;
+        }
+
+        .section {
+            margin: 80px 0;
+        }
+
+        h2 {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        h3 {
+            font-size: 2em;
+            color: #764ba2;
+            margin: 40px 0 20px;
+        }
+
+        .intro-box {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #667eea;
+            margin: 40px 0;
+            font-size: 1.3em;
+            line-height: 2;
+        }
+
+        .pillars-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            margin: 50px 0;
+        }
+
+        .pillar-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border: 2px solid #667eea;
+            padding: 30px;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pillar-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .pillar-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .pillar-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 50px rgba(102, 126, 234, 0.4);
+            border-color: #764ba2;
+        }
+
+        .pillar-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .pillar-emoji {
+            font-size: 3em;
+        }
+
+        .pillar-title {
+            font-size: 1.8em;
+            color: #667eea;
+        }
+
+        .pillar-content {
+            line-height: 1.9;
+            white-space: pre-wrap;
+        }
+
+        .key-learnings {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 50px;
+            border-radius: 20px;
+            margin: 60px 0;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+        }
+
+        .key-learnings h2 {
+            color: #fff;
+            border-bottom-color: rgba(255,255,255,0.3);
+        }
+
+        .learning-list {
+            list-style: none;
+            margin-top: 30px;
+        }
+
+        .learning-item {
+            padding: 20px;
+            margin: 15px 0;
+            background: rgba(255,255,255,0.1);
+            border-left: 5px solid #fff;
+            font-size: 1.2em;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .practical-use {
+            background: #1a1a1a;
+            padding: 50px;
+            border-radius: 20px;
+            border: 3px solid #764ba2;
+            margin: 60px 0;
+        }
+
+        footer {
+            background-color: #000;
+            border-top: 3px solid #667eea;
+            padding: 40px 0;
+            text-align: center;
+            margin-top: 100px;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero-content h1 { font-size: 3em; }
+            .pillars-grid { grid-template-columns: 1fr; }
+            .save-button { right: 15px; padding: 12px 20px; font-size: 0.9em; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">📖 ENCICLOPEDIA DELLA VITA</div>
+    </header>
+
+    <button class="save-button" onclick="salvaContenuto()">💾 Salva nei Preferiti</button>
+
+    <div class="hero">
+        <div class="hero-content">
+            <h1>PASTA</h1>
+            <p>Esplorazione completa attraverso i 9 Pilastri della Vita</p>
+        </div>
+    </div>
+
+    <div class="container">
+        
+        <div class="video-section">
+            <h2>🎬 Scopri Pasta</h2>
+            <div class="video-wrapper">
+                <iframe src="https://www.youtube.com/embed/h__VXDqmnXw" 
+                        title="Pasta" 
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen>
+                </iframe>
+            </div>
+            <div class="caption">
+                <strong>Video essenziale su Pasta</strong> - Una prospettiva unica e coinvolgente per comprendere profondamente questo argomento.
+            </div>
+        </div>
+        
+
+        <div class="section">
+            <h2>📚 Esplorazione attraverso i 9 Pilastri</h2>
+            <div class="intro-box">
+                Ogni aspetto della vita è interconnesso. Scopri come <strong>Pasta</strong> influenza e si manifesta attraverso le nove dimensioni fondamentali dell'esistenza umana.
+            </div>
+
+            <div class="pillars-grid">
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">💚</div>
+                            <div class="pillar-title">Salute</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta è un alimento tradizionale italiano che contribuisce alla salute fisica e mentale grazie alle sue proprietà nutrizionali e alla sua ricchezza culturale.
+
+PUNTI CHIAVE:
+
+*   La pasta è una fonte di carboidrati, che forniscono energia e sono utilizzati come fonte di energia per il corpo.
+*   La pasta è ricca di vitamine e minerali essenziali, come la vitamina B12 e il ferro, importanti per la produzione di globuli rossi.
+*   La scelta della pasta corretta (ad esempio, pasta integrale) può influire sulla qualità della nutrizione.
+
+ESEMPIO PRATICO:
+Un esempio di realizzazione pratica è la preparazione di una cena equilibrata con pasta integrale al pomodoro, accompagnato da verdure e un po' di formaggio a riduzione, che fornisce una buona fonte di fibre e nutrienti.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Alta, in quanto si basa su fonti di informazione attendibili ed evidenzia la ricchezza nutrizionale della pasta.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🙏</div>
+                            <div class="pillar-title">Fede</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta, come alimento tradizionale italiano, è strettamente legata alla Fede attraverso la sua storia culturale e spirituale. La sua produzione e consumo sono profondamente radicati nella tradizione italiana, dove la famiglia e la comunità giocano un ruolo fondamentale nella preparazione e nel condividere pasti. Inoltre, la pasta è spesso associata a momenti sacri come i cibi di compleanno o le feste familiari.
+
+PUNTI CHIAVE:
+- La pasta è un alimento simbolico della comunità e della famiglia, che fornisce energia e nutrimento non solo fisico ma anche emotivo.
+- La sua varietà di formati riflette la diversità culturale italiana, con ricette e tradizioni regionali che vengono passate da generazione in generazione.
+- La pasta è spesso associata a momenti sacri e rituali familiari, come ad esempio il pranzo di Natale o l'Annunciazione.
+
+ESEMPIO PRATICO:
+La preparazione della pasta fresca con le mani da una nonna italiano rappresenta un momento di connessione spirituale con la propria eredità culturale e familiare.
+
+CREDIBILITÀ:
+Alta, poiché si basa su fonti storiche e culturali affidabili, come libri di cucina italiani e studi sulla storia della pasta.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🍽️</div>
+                            <div class="pillar-title">Cibo</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta è un esempio di alimento tradizionale italiano che riflette la cultura e le abitudini culinarie del paese, evidenziando l'importanza della nutrizione e dell'alimentazione nella società italiana.
+
+PUNTI CHIAVE:
+- La pasta è una fonte ricca di carboidrati, il principale alimento energetico per l'uomo.
+- Ci sono centinaia di formati diversi di pasta, ognuno con caratteristiche uniche e usaggi specifici nella cucina italiana.
+- La pasta è spesso associata a piatti tradizionali italiani come spaghetti Bolognese o lasagne.
+
+ESEMPIO PRATICO:
+In Italia, la pasta è una parte integrante della cultura culinaria, con molti ristoranti e pizzerie che offrono varietà di pasta fresca o cotta ogni giorno.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Alta, poiché si tratta di un argomento comunemente accettato dalla comunità scientifica e culturale italiana.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🏃</div>
+                            <div class="pillar-title">Sport</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta, come alimento tradizionale italiano, può essere vista come un esempio di alimentazione sana e equilibrata che supporta l'attività fisica. La sua ricchezza di carboidrati la rende una fonte di energia ideale per gli atleti. Inoltre, l'importanza della farina di grano nella pasta lega strettamente alla disciplina del movimento e dell'alimentazione.
+
+PUNTI CHIAVE:
+- La pasta è ricca di carboidrati, una fonte di energia essenziale per gli atleti.
+- La sua preparazione tradizionale richiede un'attenzione particolare alla qualità della farina e dell'acqua, simile alle esigenze di precisione che richiedono i praticanti del movimento e la disciplina sportiva.
+- La varietà di formati diversi di pasta offre una vasta gamma di opzioni per gli atleti, dal sano al più ricco, in modo da soddisfare le diverse esigenze nutrizionali.
+
+ESEMPIO PRATICO:
+Un allenatore di calcio potrebbe consigliare ai suoi giocatori di consumare una porzione di pasta prima di una partita per fornire energia e stabilità.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Alta, poiché si basa su principi nutrizionali generalmente riconosciuti e applicati nella maggior parte delle aree sportive.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🎵</div>
+                            <div class="pillar-title">Musica</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta è un alimento tradizionale italiano che, come la musica, ha una storia e una cultura profonde legate all'identità nazionale. La sua ricchezza armonica di sapori e texture può essere paragonata alla complessità della musica classica, che combina note e ritmi in armonia per creare un'opera completa. Anche come la musica, la pasta è una forma d'arte che esige abilità e tecnica per essere preparata e apprezzata.
+
+PUNTI CHIAVE:
+- La pasta è un alimento ricco di carboidrati, che forniscono energia simile a come il ritmo e la melodia forniscano energia emotiva in una canzone.
+- L'importanza della farina di grano come ingrediente principale è simile all'importanza del strumento nel suono musicale, poiché entrambi contribuiscono alla costruzione dell'intera opera.
+- La diversità dei formati e delle ricette è paragonabile alla varietà di stili musicali e opere d'arte che esistono in un repertorio musicale.
+
+ESEMPIO PRATICO:
+La preparazione di una pasta artigianale richiede la stessa cura e dedizione dell'artista musicale, poiché entrambi devono creare qualcosa di unico e autentico.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Alta, poiché si tratta di una definizione generica e non specifica della pasta, che può essere verificata attraverso fonti accademiche e culturali.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🎨</div>
+                            <div class="pillar-title">Arte</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta come alimento tradizionale italiano rappresenta una connessione diretta con l'Arte, poiché la sua preparazione e presentazione sono spesso associate a momenti sociali e culinari che richiedono creatività e bellezza. La varietà di formati e ingredienti utilizzati nella preparazione della pasta offre spazi per l'espressione artistica. Inoltre, la scelta dei colori e degli ingredienti utilizzati per decorare la pasta può essere considerata una forma di Arte.
+
+PUNTI CHIAVE:
+- La varietà di formati di pasta esiste in gran numero, con diverse regioni italiane che hanno sviluppato tradizioni culinarie uniche.
+- La preparazione della pasta è spesso un processo artigianale che richiede attenzione e cura per ottenere il risultato desiderato.
+- La scelta dei colori e degli ingredienti utilizzati per decorare la pasta può essere considerata una forma di Arte, poiché rappresenta un'opportunità per esprimersi creativamente.
+
+ESEMPIO PRATICO:
+La creazione di un nuovo formato di pasta artigianale o la sperimentazione di nuovi colori e ingredienti possono essere esempi pratici dell'Arte nella preparazione della pasta.
+
+CREDIBILITÀ:
+Alta, poiché questa informazione è supportata da fonti culinarie e artigianali attendibili.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">⚕️</div>
+                            <div class="pillar-title">Medicina</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta è un alimento tradizionale italiano che potrebbe avere effetti benefici sulla salute grazie alle sue proprietà nutrizionali, come la ricchezza di carboidrati e l'apporto di energia.
+
+PUNTI CHIAVE:
+- La pasta può essere una fonte importante di energia per individui con bisogno di aumentare le loro prestazioni fisiche o per coloro che hanno una dieta poco equilibrata.
+- Alcuni formati di pasta, come quelli ricchi di fibre e proteine, potrebbero offrire benefizi aggiuntivi per la salute del digerimento e dell'assorbimento delle nutrizioni.
+- Tuttavia, è importante notare che una dieta equilibrata e variata è essenziale per garantire una buona salute e prevenire problemi di salute come l'obesità.
+
+ESEMPIO PRATICO:
+Un esempio pratico della pasta potrebbe essere utilizzata come parte di una dieta equilibrata per individui con bisogno di aumentare le loro prestazioni fisiche, come atleti o operai.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Alta, poiché si basa su dati nutrizionali e principi di salute pubblica riconosciuti.</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">🏛️</div>
+                            <div class="pillar-title">Politica</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta è un alimento tradizionale italiano che riflette la cultura e la storia del paese, che a sua volta influenzano la società e la governance italiana.
+
+PUNTI CHIAVE:
+- La produzione di pasta in Italia è regolamentata dalla normativa alimentare, che stabilisce le norme per la qualità e la sicurezza dell'alimento.
+- La scelta dei formati e delle ricette di pasta è influenzata dalle tradizioni culinarie italiane, che a loro volta riflettono la diversità culturale del paese.
+- La pasta è un alimento strategico per la prevenzione della malnutrizione, in particolare tra i bambini, grazie alla sua ricchezza di carboidrati e energia.
+
+ESEMPIO PRATICO:
+In Italia, la pasta è anche un simbolo della solidarietà e del sostegno sociale, come ad esempio nella tradizione dei "pranzi condivisi" nelle scuole e nei rifugi per le persone senzatetto.
+
+CREDIBILITÀ:
+La credibilità dell'informazione sulla pasta è Alta, poiché si basa su fonti attendibili e rispettate come l'Organizzazione Mondiale della Sanità (OMS) e l'Istituto Nazionale di Ricerca per gli Alimenti e le Nutrizioni (INRAN).</div>
+                    </div>
+                
+                    <div class="pillar-card">
+                        <div class="pillar-header">
+                            <div class="pillar-emoji">😄</div>
+                            <div class="pillar-title">Comicità</div>
+                        </div>
+                        <div class="pillar-content">CONNESSIONE:
+La pasta, come alimento tradizionale italiano, offre una connessione interessante con il Comicità grazie alla sua versatilità e capacità di essere presentata in modi divertenti e creativi, come ad esempio nella preparazione di piatti "ridicoli" o nella creazione di personaggi umoristici legati al cibo.
+
+PUNTI CHIAVE:
+- La pasta è un alimento ricco di carboidrati, ma nonostante ciò, esiste una vasta gamma di formati diversi che possono essere considerati "umoristici" a causa della loro varietà e creatività.
+- La ricchezza culturale della pasta italiana è spesso rappresentata in modi divertenti e caricaturali, come ad esempio nella presentazione dei vari formati di pasta come se fossero personaggi diversi.
+- L'energia che fornisce la pasta può essere vista anche come un fattore umoristico, poiché una persona che mangia troppa pasta potrebbe essere considerata "un po' pizzicata" o "in overdrive".
+
+ESEMPIO PRATICO:
+La creatività culinaria dei chef italiani è spesso espressa attraverso la presentazione di piatti "umoristici", come ad esempio il famoso "Spaghetti all'antica" che rappresenta un personaggio umoristico caricaturale.
+
+CREDIBILITÀ:
+La credibilità dell'informazione è Media, poiché la descrizione della pasta come alimento ricco di carboidrati e varia nella sua forma è basata su informazioni generali e non specifiche, rendendo l'informazione attendibile ma anche un po' generica.</div>
+                    </div>
+                
+            </div>
+        </div>
+
+        <div class="key-learnings">
+            <h2>💡 Cosa Portare a Casa</h2>
+            <p style="font-size: 1.3em; margin-bottom: 30px;">Gli insegnamenti chiave da applicare nella tua vita quotidiana:</p>
+            <ul class="learning-list">
+                
+                    <li class="learning-item">Un esempio di realizzazione pratica è la preparazione di una cena equilibrata con pasta integrale al pomodoro, accompagnato da verdure e un po' di formaggio a riduzione, che fornisce una buona fonte di fibre e nutrienti.</li>
+                
+                    <li class="learning-item">La preparazione della pasta fresca con le mani da una nonna italiano rappresenta un momento di connessione spirituale con la propria eredità culturale e familiare.</li>
+                
+                    <li class="learning-item">In Italia, la pasta è una parte integrante della cultura culinaria, con molti ristoranti e pizzerie che offrono varietà di pasta fresca o cotta ogni giorno.</li>
+                
+                    <li class="learning-item">Un allenatore di calcio potrebbe consigliare ai suoi giocatori di consumare una porzione di pasta prima di una partita per fornire energia e stabilità.</li>
+                
+                    <li class="learning-item">La preparazione di una pasta artigianale richiede la stessa cura e dedizione dell'artista musicale, poiché entrambi devono creare qualcosa di unico e autentico.</li>
+                
+                
+            </ul>
+        </div>
+
+        <div class="practical-use">
+            <h2>🎯 Applicazione Pratica</h2>
+            <h3>Come integrare Pasta nella vita di tutti i giorni:</h3>
+            <div style="margin-top: 30px; font-size: 1.2em; line-height: 2;">
+                <p style="margin-bottom: 25px;"><strong>Salute:</strong> Un esempio di realizzazione pratica è la preparazione di una cena equilibrata con pasta integrale al pomodoro, accompagnato da verdure e un po' di formaggio a riduzione, che fornisce una buona fonte di fibre e nutrienti.</p><p style="margin-bottom: 25px;"><strong>Fede:</strong> La preparazione della pasta fresca con le mani da una nonna italiano rappresenta un momento di connessione spirituale con la propria eredità culturale e familiare.</p><p style="margin-bottom: 25px;"><strong>Cibo:</strong> In Italia, la pasta è una parte integrante della cultura culinaria, con molti ristoranti e pizzerie che offrono varietà di pasta fresca o cotta ogni giorno.</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p style="font-size: 1.3em; color: #667eea; margin-bottom: 15px;">ENCICLOPEDIA DELLA VITA</p>
+        <p style="opacity: 0.7;">Conoscenza indipendente per una vita consapevole</p>
+        <p style="margin-top: 20px; font-size: 0.9em; opacity: 0.5;">
+            Ricerca effettuata: 29/09/2025
+        </p>
+    </footer>
+
+    <script>
+        function salvaContenuto() {
+            // Simulazione salvataggio - da implementare con backend
+            const salvato = localStorage.getItem('preferiti') || '[]';
+            const preferiti = JSON.parse(salvato);
+            
+            const nuovoPreferito = {
+                argomento: 'Pasta',
+                data: new Date().toISOString(),
+                url: window.location.href
+            };
+            
+            preferiti.push(nuovoPreferito);
+            localStorage.setItem('preferiti', JSON.stringify(preferiti));
+            
+            alert('✓ Pasta salvato nei tuoi preferiti!\n\nPotrai rivederlo quando vorrai nella sezione "I Miei Contenuti".');
+        }
+
+        // Animazioni scroll
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.animation = 'fadeInUp 0.8s ease-out';
+                }
+            });
+        });
+
+        document.querySelectorAll('.pillar-card, .section').forEach(el => observer.observe(el));
+    </script>
+</body>
+</html>

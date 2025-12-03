@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PASTA - Enciclopedia della Vita</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            line-height: 1.7;
+        }
+
+        /* HEADER IDENTICO */
+        header {
+            background: #000;
+            border-bottom: 2px solid #667eea;
+            padding: 20px 30px;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        /* BREADCRUMB */
+        .breadcrumb {
+            background: #111;
+            padding: 15px 30px;
+            border-bottom: 1px solid #222;
+        }
+
+        .breadcrumb-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            color: #888;
+        }
+
+        .breadcrumb a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        /* HERO PAGINA */
+        .page-hero {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0a0a0a 100%);
+            padding: 60px 30px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .page-hero-content {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .page-title {
+            font-size: 3.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .page-subtitle {
+            font-size: 1.3em;
+            color: #a0a0a0;
+            margin-bottom: 30px;
+        }
+
+        .meta-tags {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            background: #1a1a1a;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            border: 1px solid #333;
+        }
+
+        /* CONTENUTO */
+        .content-wrapper {
+            max-width: 1000px;
+            margin: 60px auto;
+            padding: 0 30px;
+        }
+
+        .content-section {
+            background: #111;
+            padding: 40px;
+            margin-bottom: 40px;
+            border-left: 4px solid #667eea;
+            border-radius: 10px;
+        }
+
+        .content-section h2 {
+            font-size: 2em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .content-section p {
+            font-size: 1.1em;
+            line-height: 1.8;
+            margin-bottom: 20px;
+        }
+
+        /* VIDEO */
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            margin: 30px 0;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 3px solid #667eea;
+        }
+
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* LISTA PRATICA */
+        .practical-list {
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 30px 0;
+        }
+
+        .practical-list h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .practical-list ul {
+            list-style: none;
+        }
+
+        .practical-list li {
+            padding: 12px 0;
+            padding-left: 30px;
+            border-bottom: 1px solid #2a2a2a;
+            position: relative;
+        }
+
+        .practical-list li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        /* FACT CHECK BOX */
+        .fact-check {
+            background: linear-gradient(135deg, #1a4d2e 0%, #0a2818 100%);
+            padding: 30px;
+            border-radius: 15px;
+            border-left: 5px solid #4ade80;
+            margin: 40px 0;
+        }
+
+        .fact-check.false {
+            background: linear-gradient(135deg, #4d1a1a 0%, #280a0a 100%);
+            border-left-color: #ef4444;
+        }
+
+        .fact-check-title {
+            font-size: 1.5em;
+            color: #4ade80;
+            margin-bottom: 15px;
+        }
+
+        .fact-check.false .fact-check-title {
+            color: #ef4444;
+        }
+
+        /* COLLEGAMENTO AD ALTRE SEZIONI */
+        .related-sections {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 60px 0;
+        }
+
+        .related-card {
+            background: #1a1a1a;
+            padding: 25px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.3s ease;
+        }
+
+        .related-card:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+        }
+
+        .related-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        footer {
+            background: #000;
+            border-top: 2px solid #667eea;
+            padding: 40px 30px;
+            text-align: center;
+            margin-top: 100px;
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <header>
+        <div class="header-content">
+            <a href="/index.html" class="logo">📖 Enciclopedia della Vita</a>
+            <div>
+                <a href="/cerca" style="color: #667eea; text-decoration: none; margin-right: 20px;">🔍 Cerca</a>
+                <a href="/profilo" style="color: #667eea; text-decoration: none;">👤 Profilo</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- BREADCRUMB -->
+    <div class="breadcrumb">
+        <div class="breadcrumb-content">
+            <a href="/index.html">Home</a> / 
+            <a href="/cibo">Categoria</a> / 
+            <span>Argomento</span>
+        </div>
+    </div>
+
+    <!-- HERO PAGINA -->
+    <div class="page-hero">
+        <div class="page-hero-content">
+            <h1 class="page-title">PASTA</h1>
+            <p class="page-subtitle">Tutto quello che devi sapere su pasta</p>
+            <div class="meta-tags">
+                <span class="tag">⏱️ Lettura: 5 min</span>
+                <span class="tag">📹 Video incluso</span>
+                <span class="tag">✅ Verificato</span>
+                <span class="tag">🎯 Per tutte le età</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENUTO -->
+    <div class="content-wrapper">
+        <!-- VIDEO PRINCIPALE -->
+        <div class="content-section">
+            <h2>Video Essenziale</h2>
+            <div class="video-wrapper">
+                <iframe src="https://www.youtube.com/embed/h__VXDqmnXw" frameborder="0" allowfullscreen></iframe>
+            </div>
+            <p style="margin-top: 20px; font-style: italic; color: #888;">
+                Video selezionato e verificato per accuratezza
+            </p>
+        </div>
+
+        <!-- COS'È -->
+        <div class="content-section">
+            <h2>Cos'è?</h2>
+            <p>Pasta è quella cosa che si mangia sempre con le donne italiane!
+
+Quasi tutto il tempo, io e mezza Italia ci mettiamo a cucinare qualcosa di semplice per arrivare alle tue mani in 10 minuti massimi. Si può fare con delle uova, se vuoi qualcosa che non sia troppo complicato.
+
+La verità è che la pasta non ha un prezzo esagerato, si conserva bene e serve a fornirti energia. In Italia ci sono infinite varietà di pasta: spaghetti, penne... il tipo di pasta che vuoi mangiare dipende solo da come te lo immagini.</p>
+        </div>
+
+        <!-- COSA FARCI -->
+        <div class="content-section">
+            <h2>Cosa ci faccio?</h2>
+            <div class="practical-list">
+                <h3>Applicazioni Pratiche:</h3>
+                <ul>
+                    <li>Ecco alcune idee per utilizzare la pasta:</li>
+                    <li>**Colazione veloce**: 15 minuti di preparazione con una pasta al pomodoro, un uovo battuto e una spruzzata di olio d'oliva.</li>
+                    <li>**Cena rapida**: Fagioli con spaghetti e verdure in 10 minuti.</li>
+                    <li>**Lunedì notte**: Pasta alla carbonara, cotto il giorno precedente per risparmiare tempo.</li>
+                    <li>"Fate una pausa dal lavoro a metà pomeriggio" *Cucinate una pasta semplice con pomodoro e peperoni.* Il risultato sarà delizioso e ristorerete.</li>
+                    
+                    
+                    
+                    
+                    
+                </ul>
+            </div>
+        </div>
+
+        <!-- PERCHÉ IMPORTA -->
+        <div class="content-section">
+            <h2>Perché mi interessa?</h2>
+            <p>"Vedi, la pasta non è solo un alimento, è una risorsa economica. Se cucini a casa, puoi fare il tuo pasto per circa 1-2 euro, che è uno dei prezzi più bassi del mercato. Questo significa che potrai risparmiare 10-20 euro a settimana, che può sembrare poco ma in realtà rappresenta una notevole somma di denaro all'anno.
+
+Inoltre, cucinare la pasta ti permette di risparmiare tempo. Se si tratta solo di cuocere un paio di minuti il pasto e aggiungere gli ingredienti, puoi guadagnarti mezz'ora a più a settembre, risparmiandoti un po' di tempo che puoi utilizzare per altre cose."</p>
+        </div>
+
+        <!-- FACT CHECK -->
+        <div class="fact-check">
+            <div class="fact-check-title">✓ VERIFICATO</div>
+            <p><strong>Mito da sfatare:</strong> "[MITO COMUNE]"</p>
+            <p><strong>Verità:</strong> [SPIEGAZIONE VERA]</p>
+        </div>
+
+        <!-- COLLEGAMENTI -->
+        <h2 style="color: #667eea; margin: 60px 0 30px;">Approfondisci</h2>
+        <div class="related-sections">
+            <a href="#" class="related-card">
+                <h4>Argomento Correlato 1</h4>
+                <p>Breve descrizione del collegamento logico</p>
+            </a>
+            <a href="#" class="related-card">
+                <h4>Argomento Correlato 2</h4>
+                <p>Breve descrizione del collegamento logico</p>
+            </a>
+            <a href="#" class="related-card">
+                <h4>Argomento Correlato 3</h4>
+                <p>Breve descrizione del collegamento logico</p>
+            </a>
+        </div>
+    </div>
+
+    <footer>
+        <p style="color: #667eea; font-size: 1.1em;">Enciclopedia della Vita</p>
+        <p style="color: #666; margin-top: 10px;">Conoscenza verificata e pratica</p>
+    </footer>
+</body>
+</html>

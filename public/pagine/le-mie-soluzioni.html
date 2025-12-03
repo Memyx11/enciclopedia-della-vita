@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Mie Soluzioni | Enciclopedia della Vita</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+  min-height: 100vh;
+  color: #e0e0e0;
+  padding: 40px 20px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+.header h1 {
+  font-size: 3em;
+  background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 10px;
+}
+
+.header p {
+  color: #888;
+  font-size: 1.1em;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+}
+
+.nav-btn {
+  padding: 12px 24px;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: #667eea;
+  text-decoration: none;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.nav-btn:hover {
+  background: rgba(102, 126, 234, 0.2);
+  transform: translateY(-2px);
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 40px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  padding: 10px 20px;
+  background: rgba(26, 26, 26, 0.6);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 10px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+}
+
+.filter-tab.active {
+  background: rgba(102, 126, 234, 0.2);
+  color: #667eea;
+  border-color: rgba(102, 126, 234, 0.4);
+}
+
+.filter-tab:hover {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.solutions-grid {
+  display: grid;
+  gap: 30px;
+}
+
+/* CARD SOLUZIONE */
+.solution-card {
+  background: rgba(26, 26, 26, 0.6);
+  backdrop-filter: blur(20px);
+  border: 2px solid rgba(102, 126, 234, 0.2);
+  border-radius: 20px;
+  padding: 30px;
+  position: relative;
+  transition: all 0.3s;
+  scroll-margin-top: 100px;
+}
+
+.solution-card.highlighted {
+  border-color: #667eea;
+  box-shadow: 0 0 40px rgba(102, 126, 234, 0.4);
+  animation: pulse-highlight 2s ease-in-out;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% { box-shadow: 0 0 40px rgba(102, 126, 234, 0.4); }
+  50% { box-shadow: 0 0 60px rgba(102, 126, 234, 0.7); }
+}
+
+.solution-card:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+  transform: translateY(-3px);
+}
+
+/* HEADER CARD */
+.solution-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 25px;
+  gap: 20px;
+}
+
+.solution-title-area {
+  flex: 1;
+}
+
+.solution-status {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-proposta {
+  background: rgba(255, 212, 59, 0.2);
+  color: #ffd43b;
+  border: 1px solid rgba(255, 212, 59, 0.3);
+}
+
+.status-accettata {
+  background: rgba(81, 207, 102, 0.2);
+  color: #51cf66;
+  border: 1px solid rgba(81, 207, 102, 0.3);
+}
+
+.status-rifiutata {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 107, 107, 0.3);
+}
+
+.solution-title {
+  font-size: 1.6em;
+  color: #667eea;
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+
+.solution-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 0.9em;
+  color: #777;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* PROGRESS BAR */
+.solution-progress {
+  margin: 20px 0;
+  padding: 20px;
+  background: rgba(10, 10, 10, 0.5);
+  border-radius: 15px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-header h4 {
+  color: #888;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.progress-percentage {
+  font-size: 1.3em;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.progress-bar-container {
+  background: #1a1a1a;
+  height: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transition: width 0.5s ease;
+  border-radius: 10px;
+}
+
+.progress-bar-fill.complete {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.5); }
+  50% { box-shadow: 0 0 30px rgba(102, 126, 234, 0.8); }
+}
+
+/* STEPS */
+.solution-steps {
+  margin: 25px 0;
+}
+
+.steps-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.steps-header h4 {
+  color: #667eea;
+  font-size: 1.1em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.expand-btn {
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: #667eea;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s;
+  font-weight: 600;
+}
+
+.expand-btn:hover {
+  background: rgba(102, 126, 234, 0.2);
+}
+
+.steps-container {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease;
+}
+
+.steps-container.expanded {
+  max-height: 3000px;
+}
+
+.step-item {
+  background: rgba(10, 10, 10, 0.4);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 15px;
+  transition: all 0.3s;
+}
+
+.step-item:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+  transform: translateX(5px);
+}
+
+.step-item.completed {
+  background: rgba(81, 207, 102, 0.05);
+  border-color: rgba(81, 207, 102, 0.3);
+}
+
+.step-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.step-checkbox {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #667eea;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.3s;
+  margin-top: 2px;
+}
+
+.step-checkbox:hover {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.step-checkbox.checked {
+  background: linear-gradient(135deg, #51cf66, #37b24d);
+  border-color: #51cf66;
+}
+
+.step-checkbox.checked::after {
+  content: '✓';
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-number {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-weight: 700;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.step-text {
+  color: #e0e0e0;
+  font-size: 1.05em;
+  line-height: 1.6;
+}
+
+.step-text.completed {
+  color: #888;
+  text-decoration: line-through;
+}
+
+/* TEXTAREA NOTE */
+.step-notes {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.step-notes-label {
+  color: #888;
+  font-size: 0.85em;
+  margin-bottom: 8px;
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.step-notes-input {
+  width: 100%;
+  background: rgba(10, 10, 10, 0.6);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  color: #e0e0e0;
+  font-family: inherit;
+  font-size: 0.95em;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 60px;
+  transition: all 0.3s;
+}
+
+.step-notes-input:focus {
+  outline: none;
+  border-color: #667eea;
+  background: rgba(10, 10, 10, 0.8);
+}
+
+.step-notes-input::placeholder {
+  color: #555;
+}
+
+/* ACTIONS */
+.solution-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 0.95em;
+}
+
+.btn-accept {
+  background: linear-gradient(135deg, #51cf66, #37b24d);
+  color: white;
+}
+
+.btn-accept:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(81, 207, 102, 0.4);
+}
+
+.btn-reject {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 107, 107, 0.3);
+}
+
+.btn-reject:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+.btn-edit {
+  background: rgba(102, 126, 234, 0.2);
+  color: #667eea;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.btn-edit:hover {
+  background: rgba(102, 126, 234, 0.3);
+}
+
+/* EMPTY STATE */
+.empty-state {
+  text-align: center;
+  padding: 80px 40px;
+  color: #666;
+}
+
+.empty-state-icon {
+  font-size: 5em;
+  margin-bottom: 30px;
+  opacity: 0.5;
+}
+
+.empty-state h2 {
+  font-size: 2em;
+  margin-bottom: 20px;
+  color: #888;
+}
+
+.empty-state p {
+  font-size: 1.1em;
+  margin-bottom: 30px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .header h1 {
+    font-size: 2em;
+  }
+  
+  .solution-header {
+    flex-direction: column;
+  }
+  
+  .solution-status {
+    align-self: flex-start;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>💡 Le Mie Soluzioni</h1>
+    <p>Piani d'azione personalizzati dal tuo coach AI</p>
+  </div>
+
+  <div class="nav-buttons">
+    <a href="../chatbot-mistral.html" class="nav-btn">🤖 Chatbot</a>
+    <a href="la-mia-vita.html" class="nav-btn">📊 Dashboard</a>
+    <a href="../index.html" class="nav-btn">📚 Enciclopedia</a>
+  </div>
+
+  <div class="filter-tabs">
+    <div class="filter-tab active" onclick="filtraSoluzioni('tutte', event)">Tutte</div>
+    <div class="filter-tab" onclick="filtraSoluzioni('proposta', event)">⏳ In attesa</div>
+    <div class="filter-tab" onclick="filtraSoluzioni('accettata', event)">✅ Accettate</div>
+    <div class="filter-tab" onclick="filtraSoluzioni('rifiutata', event)">❌ Rifiutate</div>
+  </div>
+
+  <div class="solutions-grid" id="solutionsGrid"></div>
+</div>
+
+<script>
+const utente = localStorage.getItem('utenteCorrente') || 'Ospite';
+let utenti = JSON.parse(localStorage.getItem('utenti') || '{}');
+let filtroAttivo = 'tutte';
+
+// Inizializza struttura step se non esiste
+function inizializzaSteps(soluzione) {
+  if (!soluzione.stepsData) {
+    soluzione.stepsData = (soluzione.steps || []).map((step, i) => ({
+      id: `${soluzione.id}-${i}`,
+      text: step,
+      completed: false,
+      notes: ''
+    }));
+  }
+  return soluzione;
+}
+
+// Calcola progress
+function calcolaProgress(soluzione) {
+  if (!soluzione.stepsData || soluzione.stepsData.length === 0) return 0;
+  const completati = soluzione.stepsData.filter(s => s.completed).length;
+  return Math.round((completati / soluzione.stepsData.length) * 100);
+}
+
+// Salva modifiche
+function salvaDati() {
+  localStorage.setItem('utenti', JSON.stringify(utenti));
+}
+
+// Toggle step completato
+function toggleStep(soluzioneId, stepId) {
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === soluzioneId);
+  if (!soluzione) return;
+  
+  inizializzaSteps(soluzione);
+  const step = soluzione.stepsData.find(s => s.id === stepId);
+  if (step) {
+    step.completed = !step.completed;
+    salvaDati();
+    caricaSoluzioni();
+  }
+}
+
+// Salva nota step
+function salvaNotaStep(soluzioneId, stepId, nota) {
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === soluzioneId);
+  if (!soluzione) return;
+  
+  inizializzaSteps(soluzione);
+  const step = soluzione.stepsData.find(s => s.id === stepId);
+  if (step) {
+    step.notes = nota;
+    salvaDati();
+  }
+}
+
+// Toggle espansione
+function toggleSteps(soluzioneId) {
+  const container = document.querySelector(`[data-solution-id="${soluzioneId}"] .steps-container`);
+  const btn = document.querySelector(`[data-solution-id="${soluzioneId}"] .expand-btn`);
+  
+  if (container.classList.contains('expanded')) {
+    container.classList.remove('expanded');
+    btn.textContent = '📋 Espandi';
+  } else {
+    container.classList.add('expanded');
+    btn.textContent = '📋 Chiudi';
+  }
+}
+
+// Carica soluzioni
+function caricaSoluzioni() {
+  const soluzioni = utenti[utente]?.soluzioni || [];
+  const grid = document.getElementById('solutionsGrid');
+
+  // Filtra
+  let soluzioniFilter = soluzioni;
+  if (filtroAttivo !== 'tutte') {
+    soluzioniFilter = soluzioni.filter(s => s.status === filtroAttivo);
+  }
+
+  if (soluzioniFilter.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">💡</div>
+        <h2>${filtroAttivo === 'tutte' ? 'Nessuna soluzione ancora' : 'Nessuna soluzione ' + filtroAttivo}</h2>
+        <p>Il chatbot proporrà soluzioni personalizzate durante le conversazioni.</p>
+        <a href="../chatbot-mistral.html" class="nav-btn">Vai al Chatbot</a>
+      </div>
+    `;
+    return;
+  }
+
+  // Ordina per data
+  soluzioniFilter.sort((a, b) => new Date(b.dataCreazione) - new Date(a.dataCreazione));
+
+  grid.innerHTML = soluzioniFilter.map(s => {
+    inizializzaSteps(s);
+    const progress = calcolaProgress(s);
+    
+    const stepsHTML = s.stepsData && s.stepsData.length > 0 ? `
+      <div class="solution-steps">
+        <div class="steps-header">
+          <h4>📋 Piano d'azione (${s.stepsData.filter(st => st.completed).length}/${s.stepsData.length})</h4>
+          <button class="expand-btn" onclick="toggleSteps(${s.id})">📋 Espandi</button>
+        </div>
+        <div class="steps-container">
+          ${s.stepsData.map((step, i) => `
+            <div class="step-item ${step.completed ? 'completed' : ''}">
+              <div class="step-main">
+                <div class="step-checkbox ${step.completed ? 'checked' : ''}" 
+                     onclick="toggleStep(${s.id}, '${step.id}')"></div>
+                <div class="step-content">
+                  <span class="step-number">Step ${i + 1}</span>
+                  <div class="step-text ${step.completed ? 'completed' : ''}">${step.text}</div>
+                </div>
+              </div>
+              <div class="step-notes">
+                <label class="step-notes-label">📝 Note personali:</label>
+                <textarea 
+                  class="step-notes-input" 
+                  placeholder="Aggiungi note, idee, o modifiche per questo step..."
+                  onchange="salvaNotaStep(${s.id}, '${step.id}', this.value)"
+                >${step.notes || ''}</textarea>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="solution-card" id="sol-${s.id}" data-solution-id="${s.id}">
+        <div class="solution-header">
+          <div class="solution-title-area">
+            <div class="solution-title">${s.titolo || s.testo}</div>
+            <div class="solution-meta">
+              <span>📅 ${new Date(s.dataCreazione).toLocaleDateString('it-IT', {day: 'numeric', month: 'long', year: 'numeric'})}</span>
+              <span>🕐 ${new Date(s.dataCreazione).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})}</span>
+              ${s.area ? `<span>📁 ${s.area}</span>` : ''}
+            </div>
+          </div>
+          <div class="solution-status status-${s.status}">
+            ${s.status === 'proposta' ? '⏳ In attesa' : s.status === 'accettata' ? '✅ Accettata' : '❌ Rifiutata'}
+          </div>
+        </div>
+
+        ${s.stepsData && s.stepsData.length > 0 ? `
+          <div class="solution-progress">
+            <div class="progress-header">
+              <h4>📊 Progresso</h4>
+              <span class="progress-percentage">${progress}%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill ${progress === 100 ? 'complete' : ''}" style="width: ${progress}%"></div>
+            </div>
+          </div>
+        ` : ''}
+
+        ${stepsHTML}
+
+        <div class="solution-actions">
+          ${s.status === 'proposta' ? `
+            <button class="btn btn-accept" onclick="confermaSoluzione(${s.id})">✅ Accetta</button>
+            <button class="btn btn-reject" onclick="rifiutaSoluzione(${s.id})">❌ Rifiuta</button>
+            <button class="btn btn-edit" onclick="modificaSoluzione(${s.id})">✏️ Modifica</button>
+          ` : s.status === 'accettata' ? `
+            <button class="btn btn-edit" onclick="modificaSoluzione(${s.id})">✏️ Modifica</button>
+            <button class="btn btn-reject" onclick="eliminaSoluzione(${s.id})">🗑️ Elimina</button>
+          ` : `
+            <button class="btn btn-accept" onclick="riaccettaSoluzione(${s.id})">♻️ Riaccetta</button>
+            <button class="btn btn-reject" onclick="eliminaSoluzione(${s.id})">🗑️ Elimina</button>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  salvaDati();
+}
+
+// Azioni soluzioni
+function confermaSoluzione(id) {
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === id);
+  if (soluzione) {
+    soluzione.status = 'accettata';
+    soluzione.dataConferma = new Date().toISOString();
+    salvaDati();
+    caricaSoluzioni();
+  }
+}
+
+function rifiutaSoluzione(id) {
+  if (!confirm('Sei sicuro di voler rifiutare questa soluzione?')) return;
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === id);
+  if (soluzione) {
+    soluzione.status = 'rifiutata';
+    soluzione.dataRifiuto = new Date().toISOString();
+    salvaDati();
+    caricaSoluzioni();
+  }
+}
+
+function riaccettaSoluzione(id) {
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === id);
+  if (soluzione) {
+    soluzione.status = 'accettata';
+    soluzione.dataConferma = new Date().toISOString();
+    salvaDati();
+    caricaSoluzioni();
+  }
+}
+
+function modificaSoluzione(id) {
+  const soluzione = utenti[utente].soluzioni.find(s => s.id === id);
+  if (soluzione) {
+    const nuovoTitolo = prompt('Modifica titolo soluzione:', soluzione.titolo || soluzione.testo);
+    if (nuovoTitolo && nuovoTitolo.trim()) {
+      soluzione.titolo = nuovoTitolo.trim();
+      salvaDati();
+      caricaSoluzioni();
+    }
+  }
+}
+
+function eliminaSoluzione(id) {
+  if (!confirm('Eliminare definitivamente questa soluzione? Azione irreversibile!')) return;
+  utenti[utente].soluzioni = utenti[utente].soluzioni.filter(s => s.id !== id);
+  salvaDati();
+  caricaSoluzioni();
+}
+
+function filtraSoluzioni(filtro, event) {
+  filtroAttivo = filtro;
+  document.querySelectorAll('.filter-tab').forEach(tab => tab.classList.remove('active'));
+  if (event) event.target.classList.add('active');
+  caricaSoluzioni();
+}
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+  caricaSoluzioni();
+  
+  // Auto-scroll se hash presente
+  const hash = window.location.hash;
+  if (hash) {
+    setTimeout(() => {
+      const target = document.querySelector(hash);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('highlighted');
+        
+        // Espandi steps
+        const btn = target.querySelector('.expand-btn');
+        if (btn) btn.click();
+        
+        setTimeout(() => target.classList.remove('highlighted'), 3000);
+      }
+    }, 500);
+  }
+});
+</script>
+
+</body>
+</html>

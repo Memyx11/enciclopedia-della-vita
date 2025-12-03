@@ -1,0 +1,289 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { SignInButton, SignUpButton, UserButton, useUser } from '@clerk/nextjs'
+import './home.css'
+
+// Struttura navigazione
+const navItems = [
+    {
+        name: 'Sopravvivenza Base',
+        sections: [
+            {
+                title: 'Bisogni Fondamentali',
+                items: [
+                    { name: 'Salute Fisica', href: '/area/salute' },
+                    { name: 'Soldi & Lavoro', href: '/area/soldi' },
+                    { name: 'Casa & Sicurezza', href: '/area/casa' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'Cibo',
+        sections: [
+            {
+                title: 'Ricette & Nutrizione',
+                items: [
+                    { name: 'Per Tempo', href: '/enciclopedia/cibo/tempo' },
+                    { name: 'Per Budget', href: '/enciclopedia/cibo/budget' },
+                    { name: 'Cucina Pratica', href: '/enciclopedia/cibo/pratica' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'Quotidiano',
+        sections: [
+            {
+                title: 'Routine & Abitudini',
+                items: [
+                    { name: 'Routine Mattutina', href: '/enciclopedia/routine/mattina' },
+                    { name: 'Gestione Tempo', href: '/enciclopedia/routine/tempo' },
+                    { name: 'Produttività', href: '/enciclopedia/routine/produttivita' }
+                ]
+            },
+            {
+                title: 'Relazioni',
+                items: [
+                    { name: 'Comunicazione', href: '/area/relazioni' },
+                    { name: 'Vita Sociale', href: '/area/sociale' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'Sport & Abilità',
+        sections: [
+            {
+                title: 'Movimento',
+                items: [
+                    { name: 'Allenamento Base', href: '/enciclopedia/sport/base' },
+                    { name: 'Sport Specifici', href: '/enciclopedia/sport/specifici' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'Conoscenza',
+        sections: [
+            {
+                title: 'Crescita Personale',
+                items: [
+                    { name: 'Libri & Lettura', href: '/area/crescita' },
+                    { name: 'Skill Utili', href: '/enciclopedia/skill' },
+                    { name: 'Hobby Creativi', href: '/area/hobby' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'Spiritualità',
+        sections: [
+            {
+                title: 'Benessere Interiore',
+                items: [
+                    { name: 'Meditazione', href: '/area/spirituale' },
+                    { name: 'Mindfulness', href: '/enciclopedia/spiritualita/mindfulness' },
+                    { name: 'Filosofia di Vita', href: '/enciclopedia/spiritualita/filosofia' }
+                ]
+            }
+        ]
+    }
+]
+
+// Sezioni della home
+const sections = [
+    {
+        badge: 'PRIORITÀ MASSIMA',
+        badgeColor: '#ff6b6b',
+        title: 'Bisogni Fondamentali',
+        subtitle: 'Le basi per sopravvivere e funzionare ogni giorno. Parti da qui se non sai da dove iniziare.',
+        cards: [
+            { title: 'Salute Fisica', items: ['Cosa mangiare davvero', 'Come dormire bene', 'Movimento minimo vitale', 'Igiene essenziale'], href: '/area/salute' },
+            { title: 'Soldi & Lavoro', items: ['Trovare e mantenere lavoro', 'Gestire budget', 'Risparmiare efficacemente', 'Emergenze economiche'], href: '/area/soldi' },
+            { title: 'Casa & Sicurezza', items: ['Affitto vs Mutuo', 'Riparazioni base', 'Sicurezza personale', 'Convivenza sana'], href: '/area/casa' }
+        ]
+    },
+    {
+        badge: 'ALTA PRIORITÀ',
+        badgeColor: '#ffd43b',
+        title: 'Cibo - Ricette & Nutrizione',
+        subtitle: 'Mangiare bene con poco tempo e pochi soldi. Ricette testate, non teoria.',
+        cards: [
+            { title: 'Per Tempo', items: ['Ricette 15 minuti', 'Meal prep domenica', 'Piatti one-pot'], href: '/enciclopedia/cibo/tempo' },
+            { title: 'Per Budget', items: ['Sotto €5 a pasto', 'Spesa intelligente', 'Zero sprechi'], href: '/enciclopedia/cibo/budget' },
+            { title: 'Cucina Pratica', items: ['Tecniche base', 'Attrezzatura essenziale', 'Conservazione'], href: '/enciclopedia/cibo/pratica' }
+        ]
+    }
+]
+
+export default function HomePage() {
+    const { isSignedIn, user } = useUser()
+    const [mounted, setMounted] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (searchQuery.trim()) {
+            window.location.href = `/chat?q=${encodeURIComponent(searchQuery)}`
+        }
+    }
+
+    if (!mounted) return null
+
+    const userName = user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'Utente'
+
+    return (
+        <div className="home-container">
+            <div className="bg-gradient"></div>
+            
+            {/* Header */}
+            <header className="main-header">
+                <div className="header-content">
+                    <Link href="/" className="logo">📖 Enciclopedia della Vita</Link>
+                    <div className="nav-buttons">
+                        {isSignedIn ? (
+                            <>
+                                <span className="user-greeting">👤 {userName}</span>
+                                <Link href="/la-mia-vita" className="btn btn-primary">La Mia Vita</Link>
+                                <UserButton afterSignOutUrl="/" />
+                            </>
+                        ) : (
+                            <>
+                                <SignInButton mode="modal">
+                                    <button className="btn btn-ghost">Accedi</button>
+                                </SignInButton>
+                                <SignUpButton mode="modal">
+                                    <button className="btn btn-primary">Registrati</button>
+                                </SignUpButton>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            {/* Navigation con Dropdown */}
+            <nav className="main-nav">
+                <div className="nav-content">
+                    {navItems.map((item) => (
+                        <div 
+                            key={item.name}
+                            className="nav-item"
+                            onMouseEnter={() => setActiveDropdown(item.name)}
+                            onMouseLeave={() => setActiveDropdown(null)}
+                        >
+                            {item.name}
+                            {activeDropdown === item.name && (
+                                <div className="dropdown">
+                                    {item.sections.map((section, idx) => (
+                                        <div key={idx} className="dropdown-section">
+                                            <div className="dropdown-title">{section.title}</div>
+                                            {section.items.map((subItem, i) => (
+                                                <Link key={i} href={subItem.href} className="dropdown-item">
+                                                    {subItem.name}
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </nav>
+
+            {/* Hero */}
+            <section className="hero">
+                <div className="hero-badge">
+                    <span>✨</span>
+                    <span>Coach AI Personale</span>
+                </div>
+                <h1>
+                    <em>Tutto quello che ti serve</em><br/>
+                    <span className="gradient-text">per vivere meglio</span>
+                </h1>
+                <p className="hero-subtitle">
+                    Conoscenza pratica, verificata e organizzata per priorità.<br/>
+                    Dalla sopravvivenza quotidiana alla crescita personale.
+                </p>
+                
+                {/* Search */}
+                <form onSubmit={handleSearch} className="search-container">
+                    <input 
+                        type="text"
+                        placeholder="Cerca qualsiasi cosa... (es. pasta, come dormire meglio, trovare lavoro)"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="search-input"
+                    />
+                </form>
+
+                {/* CTA */}
+                <div className="hero-cta">
+                    <Link href="/chat" className="btn btn-primary btn-large">
+                        💬 Parla con il Coach AI
+                    </Link>
+                    {isSignedIn && (
+                        <Link href="/la-mia-vita" className="btn btn-ghost btn-large">
+                            📊 La Mia Dashboard
+                        </Link>
+                    )}
+                </div>
+            </section>
+
+            {/* Sezioni Contenuto */}
+            {sections.map((section, idx) => (
+                <section key={idx} className="content-section">
+                    <div className="section-header">
+                        <span className="section-badge" style={{ background: section.badgeColor }}>
+                            {section.badge}
+                        </span>
+                        <h2 className="section-title">{section.title}</h2>
+                        <p className="section-subtitle">{section.subtitle}</p>
+                    </div>
+                    <div className="cards-grid">
+                        {section.cards.map((card, i) => (
+                            <Link key={i} href={card.href} className="content-card">
+                                <h3>{card.title}</h3>
+                                <ul>
+                                    {card.items.map((item, j) => (
+                                        <li key={j}>{item}</li>
+                                    ))}
+                                </ul>
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+            ))}
+
+            {/* CTA Finale */}
+            <section className="cta-section">
+                <h2>🤖 Il Tuo Coach AI</h2>
+                <p>
+                    Non sai da dove iniziare? Parla con l&apos;AI.<br/>
+                    Analizzerà la tua situazione e ti guiderà passo passo.
+                </p>
+                <Link href="/chat" className="btn btn-primary btn-large">
+                    Inizia Ora →
+                </Link>
+            </section>
+
+            {/* Footer */}
+            <footer className="main-footer">
+                <p>Enciclopedia della Vita © 2025 - Il tuo compagno di viaggio</p>
+            </footer>
+
+            {/* FAB Chat */}
+            <Link href="/chat" className="chat-fab">
+                💬
+            </Link>
+        </div>
+    )
+}

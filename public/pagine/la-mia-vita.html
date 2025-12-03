@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Mia Vita - Dashboard Personale</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin: 40px 0;
+        }
+        
+        .area-card {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 15px;
+            padding: 25px;
+            transition: all 0.3s ease;
+        }
+        
+        .area-card:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+        }
+        
+        .area-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .area-title {
+            font-size: 1.3em;
+            color: #667eea;
+        }
+        
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status-empty {
+            background: #4d1a1a;
+            color: #ef4444;
+        }
+        
+        .status-partial {
+            background: #4d3a1a;
+            color: #f59e0b;
+        }
+        
+        .status-complete {
+            background: #1a4d2e;
+            color: #4ade80;
+        }
+        
+        .area-progress {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 10px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+        
+        .area-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn-small {
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-compile {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-view {
+            background: transparent;
+            border: 1px solid #667eea;
+            color: #667eea;
+        }
+        
+        .overall-stats {
+            background: linear-gradient(135deg, #1a1a2e, #0a0a0a);
+            padding: 40px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+        
+        .stat-circle {
+            width: 150px;
+            height: 150px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            border: 8px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            position: relative;
+        }
+        
+        .chat-button {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            font-size: 1.8em;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+        }
+        
+        .chat-button:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <a href="../index-struttura.html" class="logo">📖 Enciclopedia della Vita</a>
+            <a href="../index-struttura.html" style="color: #667eea; text-decoration: none;">← Torna alla home</a>
+        </div>
+    </header>
+
+    <div class="content-wrapper">
+        <h1 style="font-size: 2.5em; color: #667eea; margin-bottom: 10px;">La Mia Vita</h1>
+        <p style="color: #a0a0a0; font-size: 1.2em; margin-bottom: 40px;">
+            Traccia le aree importanti della tua vita. Tu compili, tu decidi.
+        </p>
+
+        <div class="overall-stats">
+            <div class="stat-circle" id="overallProgress">0%</div>
+            <h2 style="color: #667eea;">Completamento Generale</h2>
+            <p style="color: #a0a0a0; margin-top: 10px;">Hai compilato <span id="completedAreas">0</span> su 10 aree</p>
+        </div>
+
+        <div class="dashboard-grid" id="areasGrid"></div>
+    </div>
+
+    <button class="chat-button" onclick="apriChat()" title="Chatta con l'assistente">💬</button>
+
+    <footer style="margin-top: 100px;">
+        <p style="color: #667eea;">Enciclopedia della Vita</p>
+        <p style="color: #666; margin-top: 10px;">I tuoi dati restano sul tuo browser</p>
+    </footer>
+
+    <script>
+    const utenteCorrente = localStorage.getItem('utenteCorrente');
+    if (!utenteCorrente) {
+        window.location.href = '../login.html';
+    }
+    
+    const areeVita = [
+        {
+            id: 'salute',
+            nome: 'Salute Fisica',
+            emoji: '💪',
+            domande: ['Quanto tempo dedichi all\'attività fisica?', 'Come valuti la tua alimentazione?', 'Quante ore dormi?'],
+            linkEnciclopedia: '../index-struttura.html#salute'
+        },
+        {
+            id: 'soldi',
+            nome: 'Finanze',
+            emoji: '💰',
+            domande: ['Hai un budget mensile?', 'Risparmi regolarmente?', 'Hai un fondo emergenze?'],
+            linkEnciclopedia: '../index-struttura.html#soldi'
+        },
+        {
+            id: 'relazioni',
+            nome: 'Relazioni',
+            emoji: '❤️',
+            domande: ['Quanto tempo dedichi alle persone importanti?', 'Come gestisci i conflitti?'],
+            linkEnciclopedia: '../index-struttura.html#relazioni'
+        },
+        {
+            id: 'lavoro',
+            nome: 'Carriera',
+            emoji: '💼',
+            domande: ['Sei soddisfatto del tuo lavoro?', 'Stai sviluppando nuove competenze?'],
+            linkEnciclopedia: '../index-struttura.html#soldi'
+        },
+        {
+            id: 'hobby',
+            nome: 'Hobby e Svago',
+            emoji: '🎨',
+            domande: ['Hai hobby che pratichi regolarmente?', 'Quanto tempo dedichi a ciò che ti piace?'],
+            linkEnciclopedia: '../index-struttura.html'
+        },
+        {
+            id: 'crescita',
+            nome: 'Crescita Personale',
+            emoji: '📚',
+            domande: ['Stai imparando qualcosa di nuovo?', 'Leggi regolarmente?'],
+            linkEnciclopedia: '../index-struttura.html#skill'
+        },
+        {
+            id: 'casa',
+            nome: 'Casa e Ambiente',
+            emoji: '🏠',
+            domande: ['La tua casa è organizzata?', 'Ti senti sicuro dove vivi?'],
+            linkEnciclopedia: '../index-struttura.html#casa'
+        },
+        {
+            id: 'sociale',
+            nome: 'Vita Sociale',
+            emoji: '👥',
+            domande: ['Hai una rete sociale attiva?', 'Esci regolarmente?'],
+            linkEnciclopedia: '../index-struttura.html#relazioni'
+        },
+        {
+            id: 'spirituale',
+            nome: 'Benessere Interiore',
+            emoji: '🧘',
+            domande: ['Pratichi meditazione o riflessione?', 'Ti senti in pace con te stesso?'],
+            linkEnciclopedia: '../index-struttura.html#fede'
+        },
+        {
+            id: 'futuro',
+            nome: 'Progetti Futuri',
+            emoji: '🎯',
+            domande: ['Hai obiettivi chiari?', 'Stai lavorando verso qualcosa?'],
+            linkEnciclopedia: '../index-struttura.html'
+        }
+    ];
+
+    function getUtenti() {
+        return JSON.parse(localStorage.getItem('utenti') || '{}');
+    }
+
+    function salvaUtenti(utenti) {
+        localStorage.setItem('utenti', JSON.stringify(utenti));
+    }
+
+    function caricaDati() {
+        const utenti = getUtenti();
+        if (!utenti[utenteCorrente]) {
+            utenti[utenteCorrente] = { dati: {} };
+        }
+        return utenti[utenteCorrente].dati;
+    }
+
+    function salvaDati(dati) {
+        const utenti = getUtenti();
+        utenti[utenteCorrente].dati = dati;
+        salvaUtenti(utenti);
+    }
+
+    function calcolaProgress(areaId) {
+        const dati = caricaDati();
+        const risposte = dati[areaId] || {};
+        const totale = Object.keys(risposte).length;
+        const area = areeVita.find(a => a.id === areaId);
+        return Math.round((totale / area.domande.length) * 100);
+    }
+
+    function renderAree() {
+        const grid = document.getElementById('areasGrid');
+        const dati = caricaDati();
+        let totaleCompletato = 0;
+
+        grid.innerHTML = areeVita.map(area => {
+            const progress = calcolaProgress(area.id);
+            let statusClass, statusText;
+            
+            if (progress === 0) {
+                statusClass = 'status-empty';
+                statusText = 'Da iniziare';
+            } else if (progress < 100) {
+                statusClass = 'status-partial';
+                statusText = 'In corso';
+                totaleCompletato += 0.5;
+            } else {
+                statusClass = 'status-complete';
+                statusText = 'Completato';
+                totaleCompletato += 1;
+            }
+
+            return `
+                <div class="area-card">
+                    <div class="area-header">
+                        <div class="area-title">${area.emoji} ${area.nome}</div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="area-progress">
+                        <div class="progress-bar" style="width: ${progress}%"></div>
+                    </div>
+                    <p style="color: #a0a0a0; font-size: 0.9em;">${progress}% completato</p>
+                    <div class="area-actions">
+                        <button class="btn-small btn-compile" onclick="compilaArea('${area.id}')">
+                            ${progress === 0 ? 'Inizia' : 'Aggiorna'}
+                        </button>
+                        <button class="btn-small btn-view" onclick="window.location='${area.linkEnciclopedia}'">
+                            Approfondisci
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const percentualeGlobale = Math.round((totaleCompletato / areeVita.length) * 100);
+        document.getElementById('overallProgress').textContent = percentualeGlobale + '%';
+        document.getElementById('completedAreas').textContent = Math.floor(totaleCompletato);
+    }
+
+    function compilaArea(areaId) {
+        window.location.href = `form-area-compilazione.html?area=${areaId}`;
+    }
+
+    function apriChat() {
+        window.location.href = '../chatbot-mistral.html';
+    }
+
+    renderAree();
+    </script>
+</body>
+</html>
