@@ -596,3 +596,112 @@
         width: 100%;
     }
 }
+
+/* ===== MARKDOWN STYLING ===== */
+.markdown-content {
+    line-height: 1.6;
+}
+
+.markdown-content .md-p {
+    margin-bottom: 10px;
+}
+
+.markdown-content .md-p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-content .md-h1 {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin: 16px 0 10px 0;
+    color: inherit;
+}
+
+.markdown-content .md-h2 {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin: 14px 0 8px 0;
+    color: inherit;
+}
+
+.markdown-content .md-h3 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 12px 0 6px 0;
+    color: inherit;
+}
+
+.markdown-content .md-ul,
+.markdown-content .md-ol {
+    margin: 10px 0;
+    padding-left: 24px;
+}
+
+.markdown-content .md-ul li,
+.markdown-content .md-ol li {
+    margin-bottom: 6px;
+    line-height: 1.5;
+}
+
+.markdown-content .md-ul li::marker {
+    color: var(--nur-primary);
+}
+
+.markdown-content .md-ol li::marker {
+    color: var(--nur-primary);
+    font-weight: 600;
+}
+
+.markdown-content .md-quote {
+    border-left: 3px solid var(--nur-primary);
+    padding: 10px 16px;
+    margin: 12px 0;
+    background: rgba(132, 94, 247, 0.08);
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: inherit;
+    opacity: 0.9;
+}
+
+.markdown-content .inline-code {
+    background: rgba(0, 0, 0, 0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 0.9em;
+}
+
+.message-bubble.user .markdown-content .inline-code {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.markdown-content strong {
+    font-weight: 700;
+    color: inherit;
+}
+
+.markdown-content em {
+    font-style: italic;
+}
+
+/* ===== STREAMING CURSOR ===== */
+.streaming-cursor {
+    display: inline-block;
+    animation: blink 0.8s infinite;
+    color: var(--nur-primary);
+    font-weight: bold;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.message-bubble.streaming {
+    min-height: 40px;
+}
+
+.message-bubble.streaming .markdown-content {
+    display: inline;
+}

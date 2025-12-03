@@ -13,6 +13,7 @@ interface Message {
     role: 'user' | 'assistant'
     timestamp: string
     saved?: boolean
+    isStreaming?: boolean
     metadata?: {
         sentiment?: string
         area_detected?: string
@@ -20,12 +21,146 @@ interface Message {
     }
 }
 
+// Funzione per renderizzare Markdown semplice
+function renderMarkdown(text: string): JSX.Element {
+    const lines = text.split('\n')
+    const elements: JSX.Element[] = []
+    let listItems: string[] = []
+    let listType: 'ul' | 'ol' | null = null
+
+    const processInlineFormatting = (line: string): JSX.Element => {
+        // Processa **grassetto**, *corsivo*, `code`
+        const parts: (string | JSX.Element)[] = []
+        let remaining = line
+        let key = 0
+
+        while (remaining.length > 0) {
+            // Grassetto **text**
+            const boldMatch = remaining.match(/\*\*(.+?)\*\*/)
+            // Corsivo *text*
+            const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/)
+            // Code `text`
+            const codeMatch = remaining.match(/`(.+?)`/)
+
+            const matches = [
+                boldMatch ? { match: boldMatch, type: 'bold', index: boldMatch.index! } : null,
+                italicMatch ? { match: italicMatch, type: 'italic', index: italicMatch.index! } : null,
+                codeMatch ? { match: codeMatch, type: 'code', index: codeMatch.index! } : null
+            ].filter(Boolean).sort((a, b) => a!.index - b!.index)
+
+            if (matches.length === 0) {
+                parts.push(remaining)
+                break
+            }
+
+            const first = matches[0]!
+            if (first.index > 0) {
+                parts.push(remaining.substring(0, first.index))
+            }
+
+            if (first.type === 'bold') {
+                parts.push(<strong key={key++}>{first.match[1]}</strong>)
+            } else if (first.type === 'italic') {
+                parts.push(<em key={key++}>{first.match[1]}</em>)
+            } else if (first.type === 'code') {
+                parts.push(<code key={key++} className="inline-code">{first.match[1]}</code>)
+            }
+
+            remaining = remaining.substring(first.index + first.match[0].length)
+        }
+
+        return <>{parts}</>
+    }
+
+    const flushList = () => {
+        if (listItems.length > 0 && listType) {
+            const ListTag = listType
+            elements.push(
+                <ListTag key={elements.length} className={`md-${listType}`}>
+                    {listItems.map((item, i) => (
+                        <li key={i}>{processInlineFormatting(item)}</li>
+                    ))}
+                </ListTag>
+            )
+            listItems = []
+            listType = null
+        }
+    }
+
+    lines.forEach((line, i) => {
+        const trimmed = line.trim()
+
+        // Linea vuota
+        if (!trimmed) {
+            flushList()
+            return
+        }
+
+        // Citazione > text
+        if (trimmed.startsWith('> ')) {
+            flushList()
+            elements.push(
+                <blockquote key={elements.length} className="md-quote">
+                    {processInlineFormatting(trimmed.substring(2))}
+                </blockquote>
+            )
+            return
+        }
+
+        // Lista numerata 1. 2. 3.
+        const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
+        if (numberedMatch) {
+            if (listType !== 'ol') {
+                flushList()
+                listType = 'ol'
+            }
+            listItems.push(numberedMatch[2])
+            return
+        }
+
+        // Lista puntata - o •
+        if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+            if (listType !== 'ul') {
+                flushList()
+                listType = 'ul'
+            }
+            listItems.push(trimmed.substring(2))
+            return
+        }
+
+        // Heading ### ## #
+        if (trimmed.startsWith('### ')) {
+            flushList()
+            elements.push(<h4 key={elements.length} className="md-h3">{trimmed.substring(4)}</h4>)
+            return
+        }
+        if (trimmed.startsWith('## ')) {
+            flushList()
+            elements.push(<h3 key={elements.length} className="md-h2">{trimmed.substring(3)}</h3>)
+            return
+        }
+        if (trimmed.startsWith('# ')) {
+            flushList()
+            elements.push(<h2 key={elements.length} className="md-h1">{trimmed.substring(2)}</h2>)
+            return
+        }
+
+        // Testo normale
+        flushList()
+        elements.push(<p key={elements.length} className="md-p">{processInlineFormatting(trimmed)}</p>)
+    })
+
+    flushList()
+
+    return <div className="markdown-content">{elements}</div>
+}
+
 function ChatContent() {
     const { user, isLoaded } = useUser()
     const searchParams = useSearchParams()
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState('')
-    const [status, setStatus] = useState<'ready' | 'thinking' | 'error'>('ready')
+    const [status, setStatus] = useState<'ready' | 'thinking' | 'streaming' | 'error'>('ready')
     const [statusText, setStatusText] = useState('NUR è pronta')
     const [loading, setLoading] = useState(true)
     const [conversationId, setConversationId] = useState<string | null>(null)
@@ -148,7 +283,7 @@ function ChatContent() {
     }
 
     const sendMessage = async () => {
-        if (!input.trim() || !user) return
+        if (!input.trim() || !user || status !== 'ready') return
 
         const userContent = input.trim()
         const userMessage: Message = {
@@ -157,11 +292,20 @@ function ChatContent() {
             timestamp: getTimestamp()
         }
 
-        // Aggiungi subito alla UI
+        // Aggiungi messaggio utente alla UI
         setMessages(prev => [...prev, userMessage])
         setInput('')
-        setStatus('thinking')
-        setStatusText('NUR sta pensando...')
+        setStatus('streaming')
+        setStatusText('NUR sta scrivendo...')
+
+        // Crea placeholder per la risposta streaming
+        const streamingMessage: Message = {
+            content: '',
+            role: 'assistant',
+            timestamp: getTimestamp(),
+            isStreaming: true
+        }
+        setMessages(prev => [...prev, streamingMessage])
 
         try {
             // Prepara la storia recente
@@ -170,8 +314,8 @@ function ChatContent() {
                 content: m.content
             }))
 
-            // Chiama la nuova API NUR
-            const response = await fetch('/api/ai', {
+            // Chiama l'API di streaming
+            const response = await fetch('/api/ai/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -183,50 +327,84 @@ function ChatContent() {
                 })
             })
 
-            const data = await response.json()
-
-            if (!data.success) {
-                throw new Error(data.error || 'Errore API')
+            if (!response.ok) {
+                throw new Error('Stream request failed')
             }
 
-            const nurContent = data.response
-            const nurMessage: Message = {
-                content: nurContent,
-                role: 'assistant',
-                timestamp: getTimestamp(),
-                metadata: data.metadata
-            }
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+            let fullContent = ''
 
-            // Aggiorna conversationId se è nuova
-            if (data.conversation_id && !conversationId) {
-                setConversationId(data.conversation_id)
-            }
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
 
-            // Aggiorna area se rilevata
-            if (data.metadata?.area_detected) {
-                setCurrentArea(data.metadata.area_detected)
-            }
+                    const chunk = decoder.decode(value)
+                    const lines = chunk.split('\n\n')
 
-            // Aggiorna conteggio insights
-            if (data.insights_extracted > 0) {
-                setInsightsCount(prev => prev + data.insights_extracted)
-            }
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6))
 
-            // Aggiungi alla UI
-            setMessages(prev => [...prev, nurMessage])
+                                if (data.text) {
+                                    fullContent += data.text
+                                    // Aggiorna il messaggio in streaming
+                                    setMessages(prev => {
+                                        const newMessages = [...prev]
+                                        const lastMsg = newMessages[newMessages.length - 1]
+                                        if (lastMsg && lastMsg.isStreaming) {
+                                            lastMsg.content = fullContent
+                                        }
+                                        return newMessages
+                                    })
+                                }
+
+                                if (data.done) {
+                                    // Fine streaming - rimuovi flag isStreaming
+                                    setMessages(prev => {
+                                        const newMessages = [...prev]
+                                        const lastMsg = newMessages[newMessages.length - 1]
+                                        if (lastMsg) {
+                                            lastMsg.isStreaming = false
+                                        }
+                                        return newMessages
+                                    })
+                                }
+
+                                if (data.error) {
+                                    throw new Error(data.error)
+                                }
+                            } catch (e) {
+                                // Ignora errori di parsing
+                            }
+                        }
+                    }
+                }
+            }
 
             setStatus('ready')
             setStatusText('NUR è pronta')
+
         } catch (error) {
             console.error('Send error:', error)
-            const errorMessage: Message = {
-                content: 'Ops, qualcosa non va. Riprova tra un attimo.',
-                role: 'assistant',
-                timestamp: getTimestamp()
-            }
-            setMessages(prev => [...prev, errorMessage])
+            // Rimuovi messaggio streaming fallito e aggiungi errore
+            setMessages(prev => {
+                const newMessages = prev.filter(m => !m.isStreaming)
+                newMessages.push({
+                    content: 'Ops, qualcosa non va. Riprova tra un attimo.',
+                    role: 'assistant',
+                    timestamp: getTimestamp()
+                })
+                return newMessages
+            })
             setStatus('error')
             setStatusText('Errore connessione')
+            setTimeout(() => {
+                setStatus('ready')
+                setStatusText('NUR è pronta')
+            }, 3000)
         }
     }
 
@@ -330,7 +508,7 @@ function ChatContent() {
                         <h2>Ciao {userName}!</h2>
                         <p className="welcome-text">
                             Sono NUR, la tua guida personale. Non sono un bot qualunque -
-                            sono qui per aiutarti davvero, con onestà e (a volte) un po' di sana provocazione.
+                            sono qui per aiutarti davvero, con onestà e (a volte) un po&apos; di sana provocazione.
                         </p>
                         <p className="welcome-sub">Di cosa vuoi parlare?</p>
                         <div className="starter-prompts">
@@ -356,18 +534,27 @@ function ChatContent() {
                                     <div className="message-avatar">💜</div>
                                 )}
                                 <div className="message-content">
-                                    <div className="message-bubble">
-                                        {msg.content}
-                                    </div>
-                                    <div className="message-meta">
-                                        <span className="message-time">{msg.timestamp}</span>
-                                        {msg.metadata?.area_detected && (
-                                            <span className="message-area">
-                                                {msg.metadata.area_detected}
-                                            </span>
+                                    <div className={`message-bubble ${msg.isStreaming ? 'streaming' : ''}`}>
+                                        {msg.role === 'assistant' ? (
+                                            renderMarkdown(msg.content)
+                                        ) : (
+                                            msg.content
+                                        )}
+                                        {msg.isStreaming && (
+                                            <span className="streaming-cursor">▊</span>
                                         )}
                                     </div>
-                                    {msg.role === 'assistant' && (
+                                    {!msg.isStreaming && (
+                                        <div className="message-meta">
+                                            <span className="message-time">{msg.timestamp}</span>
+                                            {msg.metadata?.area_detected && (
+                                                <span className="message-area">
+                                                    {msg.metadata.area_detected}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    {msg.role === 'assistant' && !msg.isStreaming && (
                                         <div className="message-actions">
                                             {!msg.saved ? (
                                                 <button
@@ -391,19 +578,6 @@ function ChatContent() {
                                 )}
                             </div>
                         ))}
-
-                        {status === 'thinking' && (
-                            <div className="message assistant">
-                                <div className="message-avatar">💜</div>
-                                <div className="message-content">
-                                    <div className="message-bubble typing">
-                                        <span className="typing-dot"></span>
-                                        <span className="typing-dot"></span>
-                                        <span className="typing-dot"></span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </main>
@@ -426,14 +600,14 @@ function ChatContent() {
                                 sendMessage()
                             }
                         }}
-                        disabled={status === 'thinking'}
+                        disabled={status !== 'ready'}
                     />
                     <button
                         className="send-btn"
                         onClick={sendMessage}
-                        disabled={status === 'thinking' || !input.trim()}
+                        disabled={status !== 'ready' || !input.trim()}
                     >
-                        {status === 'thinking' ? (
+                        {status === 'streaming' ? (
                             <span className="sending">...</span>
                         ) : (
                             <span>→</span>
