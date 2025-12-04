@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
+import { CookieBanner } from '@/components/legal/CookieBanner'
 import '@/styles/globals.css'
 
 export const metadata: Metadata = {
@@ -15,7 +16,10 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="it">
-        <body>{children}</body>
+        <body>
+          {children}
+          <CookieBanner />
+        </body>
       </html>
     </ClerkProvider>
   )

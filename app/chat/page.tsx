@@ -5,6 +5,7 @@ import { useUser } from '@clerk/nextjs'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { AIDisclaimer, useAIDisclaimer } from '@/components/legal/AIDisclaimer'
 import './chat.css'
 
 interface Message {
@@ -167,6 +168,9 @@ function ChatContent() {
     const [currentArea, setCurrentArea] = useState<string | null>(null)
     const [insightsCount, setInsightsCount] = useState(0)
     const chatRef = useRef<HTMLDivElement>(null)
+
+    // AI Disclaimer
+    const { showDisclaimer, acceptDisclaimer } = useAIDisclaimer()
 
     // Carica dati utente e messaggi
     useEffect(() => {
@@ -463,6 +467,9 @@ function ChatContent() {
     return (
         <div className="chat-page">
             <div className="bg-gradient"></div>
+
+            {/* AI Disclaimer - mostra solo la prima volta per sessione */}
+            {showDisclaimer && <AIDisclaimer onAccept={acceptDisclaimer} />}
 
             <header className="chat-header">
                 <div className="header-left">

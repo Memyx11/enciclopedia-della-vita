@@ -239,8 +239,22 @@ export default function HomePage() {
                 </div>
             </section>
             
-            <footer>
-                <p>📖 Enciclopedia della Vita · Conoscenza pratica per vivere meglio</p>
+            <footer className="main-footer">
+                <div className="footer-content">
+                    <div className="footer-brand">
+                        <span className="footer-logo">📖</span>
+                        <span className="footer-name">Enciclopedia della Vita</span>
+                    </div>
+                    <div className="footer-links">
+                        <Link href="/privacy-policy">Privacy Policy</Link>
+                        <Link href="/termini-condizioni">Termini e Condizioni</Link>
+                        <Link href="/cookie-policy">Cookie Policy</Link>
+                    </div>
+                    <div className="footer-copy">
+                        <p>© {new Date().getFullYear()} Elias Rizzo. Tutti i diritti riservati.</p>
+                        <p className="footer-disclaimer">NUR è un&apos;intelligenza artificiale. Non sostituisce consulenza professionale.</p>
+                    </div>
+                </div>
             </footer>
         </>
     )
