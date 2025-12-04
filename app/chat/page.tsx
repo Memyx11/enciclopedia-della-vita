@@ -361,6 +361,11 @@ function ChatContent() {
                                     })
                                 }
 
+                                // Se ricevo un nuovo conversationId, salvalo
+                                if (data.conversationId) {
+                                    setConversationId(data.conversationId)
+                                }
+
                                 if (data.done) {
                                     // Fine streaming - rimuovi flag isStreaming
                                     setMessages(prev => {

@@ -1,6 +1,7 @@
 /**
  * NUR Streaming API Route
  * Endpoint per risposte in streaming (parola per parola)
+ * Con accesso a Internet e salvataggio affidabile messaggi
  */
 
 import { NextRequest } from 'next/server'
@@ -9,11 +10,12 @@ import { supabase } from '@/lib/supabase'
 import { generateNurPrompt } from '@/lib/nur/personality'
 import { buildFullUserContext, extractInsightsFromMessage, updateNurGrowthMetric } from '@/lib/nur/memory'
 import { createInsightEntry } from '@/lib/nur/journal'
+import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json()
-        const { message, userId, history, conversationId, area } = body
+        const { message, userId, history, conversationId: existingConvId, area } = body
 
         if (!message || !userId) {
             return new Response(JSON.stringify({ error: 'Parametri mancanti' }), {
@@ -26,14 +28,61 @@ export async function POST(req: NextRequest) {
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // Carica contesto utente
+        // ====== 1. SALVA SUBITO IL MESSAGGIO UTENTE ======
+        // Questo risolve il bug dei messaggi che spariscono
+        let conversationId = existingConvId
+
+        if (!conversationId) {
+            const { data: conv } = await supabase
+                .from('conversations')
+                .insert({
+                    clerk_user_id: userId,
+                    area_related: area || 'generale',
+                    status: 'active',
+                    message_count: 0
+                })
+                .select('id')
+                .single()
+
+            conversationId = conv?.id
+        }
+
+        // Salva il messaggio utente IMMEDIATAMENTE
+        if (conversationId) {
+            await supabase.from('messages').insert({
+                conversation_id: conversationId,
+                clerk_user_id: userId,
+                role: 'user',
+                content: message,
+                area_type: area || 'generale'
+            })
+
+            // Aggiorna updated_at della conversazione
+            await supabase
+                .from('conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', conversationId)
+        }
+
+        // ====== 2. CONTROLLA SE SERVE RICERCA WEB ======
+        let webSearchResults = ''
+        if (needsWebSearch(message)) {
+            const query = extractSearchQuery(message)
+            if (query.length > 3) {
+                webSearchResults = await searchAllSources(query)
+            }
+        }
+
+        // ====== 3. CARICA CONTESTO E GENERA PROMPT ======
         const userContext = await buildFullUserContext(userId)
 
-        // Genera system prompt
-        const systemPrompt = generateNurPrompt({
+        let systemPrompt = generateNurPrompt({
             ...userContext,
             current_area: area
-        }) + `
+        })
+
+        // Aggiungi istruzioni di formattazione
+        systemPrompt += `
 
 IMPORTANTE - FORMATTAZIONE RISPOSTE:
 - Usa **grassetto** per enfatizzare parole importanti
@@ -44,7 +93,20 @@ IMPORTANTE - FORMATTAZIONE RISPOSTE:
 - NON usare troppi emoji, massimo 1-2 per messaggio
 - Mantieni i paragrafi brevi (2-3 frasi max)`
 
-        // Prepara messaggi
+        // Se ci sono risultati web, aggiungili al contesto
+        if (webSearchResults) {
+            systemPrompt += `
+
+## INFORMAZIONI DA INTERNET
+
+Ho cercato su internet per te. Ecco cosa ho trovato:
+
+${webSearchResults}
+
+**USA QUESTE INFORMAZIONI** nella tua risposta quando rilevante. Cita le fonti se opportuno. Non limitarti a ripetere, elabora e personalizza per l'utente.`
+        }
+
+        // ====== 4. PREPARA MESSAGGI PER CLAUDE ======
         const messages = [
             ...(history || []).map((m: any) => ({
                 role: m.role as 'user' | 'assistant',
@@ -53,19 +115,17 @@ IMPORTANTE - FORMATTAZIONE RISPOSTE:
             { role: 'user' as const, content: message }
         ]
 
-        // Crea lo stream
+        // ====== 5. CREA LO STREAM ======
         const stream = await anthropic.messages.stream({
             model: 'claude-sonnet-4-20250514',
-            max_tokens: 800,
+            max_tokens: 1000,
             system: systemPrompt,
             messages
         })
 
-        // Encoder per lo streaming
         const encoder = new TextEncoder()
         let fullResponse = ''
 
-        // ReadableStream che invia chunks
         const readable = new ReadableStream({
             async start(controller) {
                 try {
@@ -74,18 +134,49 @@ IMPORTANTE - FORMATTAZIONE RISPOSTE:
                             const delta = event.delta as any
                             if (delta.type === 'text_delta' && delta.text) {
                                 fullResponse += delta.text
-                                // Invia il chunk come Server-Sent Event
                                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta.text })}\n\n`))
                             }
                         }
                     }
 
-                    // Dopo che lo stream è completo, processa in background
-                    processAfterStream(userId, message, fullResponse, conversationId, area, history)
+                    // ====== 6. SALVA LA RISPOSTA E PROCESSA ======
+                    // Salva SUBITO la risposta di NUR
+                    if (conversationId && fullResponse) {
+                        await supabase.from('messages').insert({
+                            conversation_id: conversationId,
+                            clerk_user_id: userId,
+                            role: 'assistant',
+                            content: fullResponse,
+                            area_type: area || 'generale'
+                        })
 
-                    // Invia evento di fine
+                        // Aggiorna conteggio messaggi
+                        const { data: conv } = await supabase
+                            .from('conversations')
+                            .select('message_count')
+                            .eq('id', conversationId)
+                            .single()
+
+                        await supabase
+                            .from('conversations')
+                            .update({
+                                message_count: (conv?.message_count || 0) + 2,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', conversationId)
+                    }
+
+                    // Processa insights in background (non blocca)
+                    processInsightsInBackground(userId, message, fullResponse, conversationId, area, history)
+
+                    // Invia nuovo conversationId se creato
+                    if (conversationId && !existingConvId) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
+                    }
+
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
                     controller.close()
+
                 } catch (error) {
                     console.error('Stream error:', error)
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'Errore durante lo streaming' })}\n\n`))
@@ -112,68 +203,18 @@ IMPORTANTE - FORMATTAZIONE RISPOSTE:
 }
 
 /**
- * Processa tutto dopo che lo stream è completo
+ * Processa insights in background senza bloccare la risposta
  */
-async function processAfterStream(
+async function processInsightsInBackground(
     userId: string,
     userMessage: string,
     nurResponse: string,
-    existingConversationId?: string,
+    conversationId?: string,
     area?: string,
     history?: any[]
 ) {
     try {
-        // 1. Salva la conversazione
-        let conversationId = existingConversationId
-
-        if (!conversationId) {
-            const { data: conv } = await supabase
-                .from('conversations')
-                .insert({
-                    clerk_user_id: userId,
-                    area_related: area || 'generale',
-                    status: 'active',
-                    message_count: 0
-                })
-                .select('id')
-                .single()
-
-            conversationId = conv?.id
-        }
-
-        if (conversationId) {
-            // Salva i messaggi
-            await supabase.from('messages').insert([
-                {
-                    conversation_id: conversationId,
-                    clerk_user_id: userId,
-                    role: 'user',
-                    content: userMessage,
-                    area_type: area || 'generale'
-                },
-                {
-                    conversation_id: conversationId,
-                    clerk_user_id: userId,
-                    role: 'assistant',
-                    content: nurResponse,
-                    area_type: area || 'generale'
-                }
-            ])
-
-            // Aggiorna conteggio
-            const { data: conv } = await supabase
-                .from('conversations')
-                .select('message_count')
-                .eq('id', conversationId)
-                .single()
-
-            await supabase
-                .from('conversations')
-                .update({ message_count: (conv?.message_count || 0) + 2 })
-                .eq('id', conversationId)
-        }
-
-        // 2. Estrai insights
+        // Estrai insights
         const insights = await extractInsightsFromMessage(
             userMessage,
             history || [],
@@ -181,7 +222,7 @@ async function processAfterStream(
             conversationId
         )
 
-        // 3. Salva insight importanti nel giornale
+        // Salva insight importanti nel giornale
         for (const insight of insights) {
             if (insight.importance >= 7) {
                 await createInsightEntry(
@@ -195,14 +236,14 @@ async function processAfterStream(
             }
         }
 
-        // 4. Aggiorna metriche
+        // Aggiorna metriche
         await updateNurGrowthMetric('conversations_total', 1)
         if (insights.length > 0) {
             await updateNurGrowthMetric('insights_generated', insights.length)
         }
 
-        // 5. Estrai e salva soluzioni se presenti
-        const solutionIndicators = ['ecco cosa puoi fare', 'ti propongo', 'primo step', 'inizia con']
+        // Estrai e salva soluzioni se presenti
+        const solutionIndicators = ['ecco cosa puoi fare', 'ti propongo', 'primo step', 'inizia con', 'ecco un piano']
         if (solutionIndicators.some(ind => nurResponse.toLowerCase().includes(ind))) {
             const lines = nurResponse.split('\n').filter(l => l.trim())
             const steps: string[] = []
@@ -232,6 +273,6 @@ async function processAfterStream(
         }
 
     } catch (error) {
-        console.error('Post-stream processing error:', error)
+        console.error('Background processing error:', error)
     }
 }
