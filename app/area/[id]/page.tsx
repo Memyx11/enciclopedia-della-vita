@@ -87,12 +87,23 @@ const areeConfig: Record<string, {
     }
 }
 
+interface Task {
+    id: string
+    title: string
+    description?: string
+    completed: boolean
+    created_at: string
+    completed_at?: string
+    due_date?: string
+    priority: 'low' | 'medium' | 'high'
+}
+
 interface LifeArea {
     id: string
     progress: number
     current_state: Record<string, any>
-    goal_state: Record<string, any>
-    active_tasks: any[]
+    goal_state: { title?: string; description?: string } | Record<string, any>
+    active_tasks: Task[]
     notes: string
     priority: number
 }
@@ -132,9 +143,11 @@ export default function AreaPage() {
     const [insights, setInsights] = useState<Insight[]>([])
     const [solutions, setSolutions] = useState<Solution[]>([])
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<'overview' | 'memories' | 'journey'>('overview')
+    const [activeTab, setActiveTab] = useState<'overview' | 'memories' | 'journey' | 'tasks'>('overview')
     const [editingState, setEditingState] = useState<'current' | 'goal' | null>(null)
     const [formData, setFormData] = useState<Record<string, string>>({})
+    const [newTaskTitle, setNewTaskTitle] = useState('')
+    const [addingTask, setAddingTask] = useState(false)
 
     const config = areeConfig[areaId]
 
@@ -266,6 +279,96 @@ export default function AreaPage() {
         }
     }
 
+    const toggleTask = async (taskId: string, completed: boolean) => {
+        if (!user) return
+
+        try {
+            const response = await fetch('/api/tasks', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'toggle',
+                    userId: user.id,
+                    areaType: areaId,
+                    taskId,
+                    completed
+                })
+            })
+
+            if (response.ok && lifeArea) {
+                const updatedTasks = lifeArea.active_tasks.map(t =>
+                    t.id === taskId
+                        ? { ...t, completed, completed_at: completed ? new Date().toISOString() : undefined }
+                        : t
+                )
+                const completedCount = updatedTasks.filter(t => t.completed).length
+                const newProgress = updatedTasks.length > 0
+                    ? Math.round((completedCount / updatedTasks.length) * 100)
+                    : lifeArea.progress
+
+                setLifeArea({
+                    ...lifeArea,
+                    active_tasks: updatedTasks,
+                    progress: newProgress
+                })
+            }
+        } catch (err) {
+            console.error('Error toggling task:', err)
+        }
+    }
+
+    const addTask = async () => {
+        if (!user || !newTaskTitle.trim()) return
+        setAddingTask(true)
+
+        try {
+            const response = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'add_task',
+                    userId: user.id,
+                    areaType: areaId,
+                    title: newTaskTitle.trim(),
+                    priority: 'medium'
+                })
+            })
+
+            const data = await response.json()
+
+            if (response.ok && data.task && lifeArea) {
+                setLifeArea({
+                    ...lifeArea,
+                    active_tasks: [...lifeArea.active_tasks, data.task]
+                })
+                setNewTaskTitle('')
+            }
+        } catch (err) {
+            console.error('Error adding task:', err)
+        } finally {
+            setAddingTask(false)
+        }
+    }
+
+    const deleteTask = async (taskId: string) => {
+        if (!user) return
+
+        try {
+            const response = await fetch(`/api/tasks?userId=${user.id}&areaType=${areaId}&taskId=${taskId}`, {
+                method: 'DELETE'
+            })
+
+            if (response.ok && lifeArea) {
+                setLifeArea({
+                    ...lifeArea,
+                    active_tasks: lifeArea.active_tasks.filter(t => t.id !== taskId)
+                })
+            }
+        } catch (err) {
+            console.error('Error deleting task:', err)
+        }
+    }
+
     const getMemoryIcon = (type: string) => {
         const icons: Record<string, string> = {
             fact: '📌',
@@ -334,6 +437,12 @@ export default function AreaPage() {
                     onClick={() => setActiveTab('memories')}
                 >
                     🧠 Memorie NUR
+                </button>
+                <button
+                    className={`tab ${activeTab === 'tasks' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('tasks')}
+                >
+                    ✅ Tasks
                 </button>
                 <button
                     className={`tab ${activeTab === 'journey' ? 'active' : ''}`}
@@ -513,6 +622,124 @@ export default function AreaPage() {
                                         </div>
                                     </>
                                 )}
+                            </div>
+                        )}
+
+                        {/* === TASKS TAB === */}
+                        {activeTab === 'tasks' && (
+                            <div className="tasks-content">
+                                <h3>✅ I tuoi Task</h3>
+
+                                {/* Goal display */}
+                                {lifeArea?.goal_state?.title && (
+                                    <div className="goal-banner">
+                                        <span className="goal-icon">🎯</span>
+                                        <div className="goal-info">
+                                            <span className="goal-label">Obiettivo</span>
+                                            <span className="goal-title">{lifeArea.goal_state.title}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Progress bar */}
+                                <div className="tasks-progress">
+                                    <div className="progress-info">
+                                        <span>Completamento</span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <div className="progress-bar-container">
+                                        <div
+                                            className="progress-bar-fill"
+                                            style={{ width: `${progress}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+
+                                {/* Add task form */}
+                                <div className="add-task-form">
+                                    <input
+                                        type="text"
+                                        placeholder="Aggiungi un nuovo task..."
+                                        value={newTaskTitle}
+                                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                                        disabled={addingTask}
+                                    />
+                                    <button
+                                        onClick={addTask}
+                                        disabled={addingTask || !newTaskTitle.trim()}
+                                        className="add-task-btn"
+                                    >
+                                        {addingTask ? '...' : '+'}
+                                    </button>
+                                </div>
+
+                                {/* Tasks list */}
+                                {lifeArea?.active_tasks && lifeArea.active_tasks.length > 0 ? (
+                                    <div className="tasks-list">
+                                        {lifeArea.active_tasks.map(task => (
+                                            <div
+                                                key={task.id}
+                                                className={`task-card ${task.completed ? 'completed' : ''}`}
+                                            >
+                                                <label className="task-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={task.completed}
+                                                        onChange={() => toggleTask(task.id, !task.completed)}
+                                                    />
+                                                    <span className="checkmark"></span>
+                                                </label>
+                                                <div className="task-content">
+                                                    <span className="task-title">{task.title}</span>
+                                                    {task.description && (
+                                                        <span className="task-desc">{task.description}</span>
+                                                    )}
+                                                    <div className="task-meta">
+                                                        <span className={`task-priority ${task.priority}`}>
+                                                            {task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '🟢'}
+                                                        </span>
+                                                        {task.completed_at && (
+                                                            <span className="task-completed-date">
+                                                                Completato: {new Date(task.completed_at).toLocaleDateString('it-IT')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    className="task-delete-btn"
+                                                    onClick={() => deleteTask(task.id)}
+                                                    title="Elimina task"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="empty-state">
+                                        <p>Nessun task ancora. Parla con NUR dei tuoi obiettivi o aggiungine uno sopra!</p>
+                                        <Link href={`/chat?area=${areaId}`} className="cta-chat">
+                                            💬 Parla con NUR
+                                        </Link>
+                                    </div>
+                                )}
+
+                                {/* Stats */}
+                                <div className="tasks-stats">
+                                    <div className="stat">
+                                        <span className="stat-value">
+                                            {lifeArea?.active_tasks?.filter(t => t.completed).length || 0}
+                                        </span>
+                                        <span className="stat-label">Completati</span>
+                                    </div>
+                                    <div className="stat">
+                                        <span className="stat-value">
+                                            {lifeArea?.active_tasks?.filter(t => !t.completed).length || 0}
+                                        </span>
+                                        <span className="stat-label">Da fare</span>
+                                    </div>
+                                </div>
                             </div>
                         )}
 

@@ -11,6 +11,7 @@ import { generateNurPrompt } from '@/lib/nur/personality'
 import { buildFullUserContext, extractInsightsFromMessage, updateNurGrowthMetric } from '@/lib/nur/memory'
 import { createInsightEntry } from '@/lib/nur/journal'
 import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
+import { generateProgressSummary, detectGoalsFromMessage, processDetectedGoals } from '@/lib/nur/goals'
 
 export async function POST(req: NextRequest) {
     try {
@@ -76,6 +77,9 @@ export async function POST(req: NextRequest) {
         // ====== 3. CARICA CONTESTO E GENERA PROMPT ======
         const userContext = await buildFullUserContext(userId)
 
+        // Genera riepilogo progressi per NUR
+        const progressSummary = await generateProgressSummary(userId)
+
         let systemPrompt = generateNurPrompt({
             ...userContext,
             current_area: area
@@ -91,7 +95,17 @@ IMPORTANTE - FORMATTAZIONE RISPOSTE:
 - Vai a capo spesso per rendere il testo leggibile
 - Usa > per citazioni o riflessioni importanti
 - NON usare troppi emoji, massimo 1-2 per messaggio
-- Mantieni i paragrafi brevi (2-3 frasi max)`
+- Mantieni i paragrafi brevi (2-3 frasi max)
+
+## PROGRESSI E OBIETTIVI DELL'UTENTE
+
+${progressSummary}
+
+Quando l'utente parla di obiettivi o di cosa vuole raggiungere:
+- Aiutalo a definire obiettivi chiari e misurabili
+- Suggerisci task concreti e realizzabili
+- Celebra i progressi fatti
+- Se vedi task completati, riconoscilo e incoraggialo`
 
         // Se ci sono risultati web, aggiungili al contesto
         if (webSearchResults) {
@@ -214,6 +228,13 @@ async function processInsightsInBackground(
     history?: any[]
 ) {
     try {
+        // ====== RILEVA OBIETTIVI DAL MESSAGGIO ======
+        const goalDetection = await detectGoalsFromMessage(userMessage, history || [])
+        if (goalDetection.detected_goals.length > 0 || goalDetection.update_current_state.length > 0) {
+            const result = await processDetectedGoals(userId, goalDetection)
+            console.log(`[Goals] Created: ${result.goalsCreated} goals, ${result.tasksCreated} tasks, ${result.statesUpdated} states`)
+        }
+
         // Estrai insights
         const insights = await extractInsightsFromMessage(
             userMessage,
