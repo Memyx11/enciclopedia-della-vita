@@ -223,20 +223,24 @@ function ChatContent() {
                     setConversationId(conv.id)
                     setCurrentArea(conv.area_related || null)
 
-                    // 3. Carica i messaggi della conversazione
+                    // 3. Carica gli ULTIMI 100 messaggi della conversazione
+                    // Ordiniamo DESC per prendere i più recenti, poi invertiamo per mostrarli cronologicamente
                     const { data: msgs, error: msgsError } = await supabase
                         .from('messages')
                         .select('*')
                         .eq('conversation_id', conv.id)
-                        .order('created_at', { ascending: true })
+                        .order('created_at', { ascending: false })
                         .limit(100)
 
                     if (msgsError) {
                         console.error('Messages load error:', msgsError)
                     }
 
-                    if (msgs && msgs.length > 0) {
-                        const formattedMessages = msgs.map(msg => ({
+                    // Inverti per ordine cronologico (dal più vecchio al più recente)
+                    const sortedMsgs = msgs ? [...msgs].reverse() : []
+
+                    if (sortedMsgs.length > 0) {
+                        const formattedMessages = sortedMsgs.map(msg => ({
                             id: msg.id,
                             content: msg.content,
                             role: msg.role as 'user' | 'assistant',
