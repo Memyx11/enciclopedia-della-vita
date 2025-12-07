@@ -207,11 +207,11 @@ export default function LaMiaVitaPage() {
                     <Link href="/chat" className="action-btn primary">
                         💬 Parla col Coach
                     </Link>
+                    <Link href="/profilo" className="action-btn">
+                        🏆 Achievements
+                    </Link>
                     <Link href="/soluzioni" className="action-btn">
                         📋 I Miei Piani
-                    </Link>
-                    <Link href="/dashboard" className="action-btn">
-                        📊 Dashboard Classica
                     </Link>
                 </div>
             </main>

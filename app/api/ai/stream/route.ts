@@ -106,12 +106,38 @@ Hai accesso COMPLETO al sistema. Puoi VEDERE tutto e FARE tutto. USALI.
 - **set_area_priority**: Imposta priorità area (1-10)
 - **add_area_note**: Aggiungi nota a un'area
 
+### EMOZIONI E BENESSERE (usa questi per tracciare lo stato emotivo):
+- **log_mood**: Registra l'umore (1-10) e le emozioni rilevate. USA SPESSO quando percepisci emozioni!
+- **get_mood_history**: Vedi l'andamento emotivo nel tempo
+- **detect_emotion**: Analizza e registra emozioni dalla conversazione
+
+### ABITUDINI (usa questi per tracciare comportamenti):
+- **track_habit**: Crea nuove abitudini o registra completamenti
+  - action: 'create' per nuova abitudine
+  - action: 'log' per segnare completamento
+  - action: 'get_status' per vedere tutte le abitudini
+
+### ACHIEVEMENT (usa questi per celebrare successi):
+- **award_achievement**: Sblocca un achievement quando l'utente raggiunge un traguardo!
+  - first_message, first_task, first_goal, first_week
+  - streak_3, streak_7 (giorni consecutivi)
+  - all_areas_visited, deep_conversation
+  - area_50, area_100 (progresso area)
+  - tasks_10, tasks_50, vulnerability, breakthrough
+- **get_achievements**: Vedi achievements sbloccati e da sbloccare
+
+### CONFRONTO TEMPORALE:
+- **compare_with_past**: Confronta situazione attuale con settimana/mese/trimestre fa
+
 ### COMPORTAMENTO:
 - **AGISCI, non chiedere**. Se l'utente dice "voglio smettere di fumare" → USA set_goal + add_task subito
 - **CONSULTA spesso**. Usa get_full_dashboard per avere contesto prima di rispondere
 - **RICORDA tutto**. Usa save_memory per fatti importanti
 - **SUGGERISCI risorse**. Usa add_resource per libri/film utili
 - **SCRIVI nel journal**. Usa add_journal_message per insight e promemoria
+- **TRACCIA EMOZIONI**. Usa log_mood quando percepisci stati emotivi
+- **CELEBRA SUCCESSI**. Usa award_achievement quando l'utente raggiunge traguardi
+- **CREA ABITUDINI**. Usa track_habit per comportamenti che l'utente vuole mantenere
 
 ## PROGRESSI ATTUALI
 
@@ -141,8 +167,7 @@ ${webSearchResults}`
             { role: 'user', content: message }
         ]
 
-        // ====== 5. LOOP CON TOOL USE ======
-        let finalResponse = ''
+        // ====== 5. FASE 1: Esegui tool use (non in streaming) ======
         let toolResults: string[] = []
         let continueLoop = true
         let iterations = 0
@@ -159,96 +184,116 @@ ${webSearchResults}`
                 messages
             })
 
-            // Processa i content blocks
-            for (const block of response.content) {
-                if (block.type === 'text') {
-                    finalResponse += block.text
-                } else if (block.type === 'tool_use') {
-                    // Esegui il tool
-                    const result = await handleToolCall(block.name, block.input, userId)
-                    toolResults.push(result.message)
-                    console.log(`[NUR Tool] ${block.name}: ${result.message}`)
+            // Controlla se ci sono tool da eseguire
+            const hasToolUse = response.content.some(block => block.type === 'tool_use')
 
-                    // Aggiungi il risultato ai messaggi per il prossimo turno
-                    messages.push({
-                        role: 'assistant',
-                        content: response.content
-                    })
-                    messages.push({
-                        role: 'user',
-                        content: [{
-                            type: 'tool_result',
-                            tool_use_id: block.id,
-                            content: result.message
-                        }]
-                    })
+            if (hasToolUse) {
+                // Esegui tutti i tool
+                for (const block of response.content) {
+                    if (block.type === 'tool_use') {
+                        const result = await handleToolCall(block.name, block.input, userId)
+                        toolResults.push(result.message)
+                        console.log(`[NUR Tool] ${block.name}: ${result.message}`)
+
+                        messages.push({
+                            role: 'assistant',
+                            content: response.content
+                        })
+                        messages.push({
+                            role: 'user',
+                            content: [{
+                                type: 'tool_result',
+                                tool_use_id: block.id,
+                                content: result.message
+                            }]
+                        })
+                    }
                 }
+            } else {
+                // Nessun tool, esci dal loop
+                continueLoop = false
             }
 
-            // Controlla se dobbiamo continuare
             if (response.stop_reason === 'end_turn') {
                 continueLoop = false
-            } else if (response.stop_reason !== 'tool_use') {
-                continueLoop = false
             }
         }
 
-        // ====== 6. SALVA E RITORNA ======
-        if (conversationId && finalResponse) {
-            // Aggiungi nota sulle azioni eseguite
-            let responseWithActions = finalResponse
-            if (toolResults.length > 0) {
-                responseWithActions += `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
-            }
-
-            await supabase.from('messages').insert({
-                conversation_id: conversationId,
-                clerk_user_id: userId,
-                role: 'assistant',
-                content: responseWithActions,
-                area_type: area || 'generale'
-            })
-
-            const { data: conv } = await supabase
-                .from('conversations')
-                .select('message_count')
-                .eq('id', conversationId)
-                .single()
-
-            await supabase
-                .from('conversations')
-                .update({
-                    message_count: (conv?.message_count || 0) + 2,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', conversationId)
-        }
-
-        // Background processing
-        processInBackground(userId, message, finalResponse, conversationId, history)
-
-        // Streaming simulato (per compatibilità con il frontend)
+        // ====== 6. FASE 2: Streaming della risposta finale ======
         const encoder = new TextEncoder()
+        let fullResponse = ''
+
         const readable = new ReadableStream({
-            start(controller) {
-                // Invia tutto il testo
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: finalResponse })}\n\n`))
+            async start(controller) {
+                try {
+                    // Invia conversationId subito se nuovo
+                    if (conversationId && !existingConvId) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
+                    }
 
-                // Invia azioni se ce ne sono
-                if (toolResults.length > 0) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                        actions: toolResults,
-                        text: `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
-                    })}\n\n`))
+                    // Ora fai streaming della risposta finale
+                    const stream = anthropic.messages.stream({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 1500,
+                        system: systemPrompt,
+                        messages
+                    })
+
+                    for await (const event of stream) {
+                        if (event.type === 'content_block_delta') {
+                            const delta = event.delta as any
+                            if (delta.type === 'text_delta' && delta.text) {
+                                fullResponse += delta.text
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta.text })}\n\n`))
+                            }
+                        }
+                    }
+
+                    // Invia azioni eseguite se ce ne sono
+                    if (toolResults.length > 0) {
+                        const actionsText = `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
+                        fullResponse += actionsText
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                            actions: toolResults,
+                            text: actionsText
+                        })}\n\n`))
+                    }
+
+                    // Salva nel database
+                    if (conversationId && fullResponse) {
+                        await supabase.from('messages').insert({
+                            conversation_id: conversationId,
+                            clerk_user_id: userId,
+                            role: 'assistant',
+                            content: fullResponse,
+                            area_type: area || 'generale'
+                        })
+
+                        const { data: conv } = await supabase
+                            .from('conversations')
+                            .select('message_count')
+                            .eq('id', conversationId)
+                            .single()
+
+                        await supabase
+                            .from('conversations')
+                            .update({
+                                message_count: (conv?.message_count || 0) + 2,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', conversationId)
+                    }
+
+                    // Background processing
+                    processInBackground(userId, message, fullResponse, conversationId, history)
+
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
+                    controller.close()
+                } catch (error: any) {
+                    console.error('Streaming error:', error)
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`))
+                    controller.close()
                 }
-
-                // Invia conversationId se nuovo
-                if (conversationId && !existingConvId) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
-                }
-
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
-                controller.close()
             }
         })
 

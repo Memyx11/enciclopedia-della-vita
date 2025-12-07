@@ -1,0 +1,190 @@
+# DIRITTO DI FAMIGLIA
+# Matrimonio, Separazione, Divorzio, Figli
+
+## MATRIMONIO
+
+### Regime patrimoniale
+**Comunione dei beni (default):**
+- Tutti i beni acquistati durante il matrimonio sono di entrambi al 50%
+- Esclusi: beni personali, ereditati, donati, strumenti di lavoro
+
+**Separazione dei beni:**
+- Ciascun coniuge è proprietario esclusivo di ciò che acquista
+- Deve essere scelta espressamente prima del matrimonio o con atto notarile
+
+### Obblighi reciproci (Art. 143 c.c.)
+- Fedeltà
+- Assistenza morale e materiale
+- Collaborazione nell'interesse della famiglia
+- Coabitazione
+- Contribuzione ai bisogni della famiglia secondo le proprie capacità
+
+## SEPARAZIONE
+
+### Separazione consensuale
+- I coniugi sono d'accordo sulle condizioni
+- Procedura: ricorso congiunto al tribunale o negoziazione assistita
+- **Tempi:** 6 mesi per il divorzio (se ci sono figli minori: 12 mesi)
+
+### Separazione giudiziale
+- I coniugi non trovano accordo
+- Un coniuge chiede al giudice di stabilire le condizioni
+- Può essere chiesta per qualsiasi motivo (non serve più la "colpa")
+- **Tempi:** 12 mesi per il divorzio (anche con figli minori)
+
+### Addebito della separazione
+- Dichiarazione che un coniuge ha causato la separazione (tradimento, violenza, abbandono)
+- Conseguenze: perde diritto al mantenimento, perde diritti successori
+- Si chiede insieme alla separazione giudiziale
+
+### Effetti della separazione
+- Cessa l'obbligo di convivenza e fedeltà
+- Permane l'obbligo di mantenimento (se c'è squilibrio economico)
+- Permangono obblighi verso i figli
+- Si può tornare insieme senza formalità
+
+## DIVORZIO
+
+### Quando si può chiedere
+- Dopo 6 mesi dalla separazione consensuale (12 se giudiziale)
+- Dopo condanna penale del coniuge per reati gravi
+- Dopo annullamento o scioglimento matrimonio all'estero
+
+### Procedura
+**Congiunto:** Entrambi d'accordo → negoziazione assistita o tribunale
+**Giudiziale:** Uno dei due non accetta → causa davanti al giudice
+
+### Effetti del divorzio
+- Scioglimento definitivo del matrimonio
+- Si può risposare
+- Si perde il cognome del marito (salvo interesse proprio o dei figli)
+- Si perdono i diritti ereditari
+
+## MANTENIMENTO
+
+### Mantenimento del coniuge
+**Chi ne ha diritto:**
+- Il coniuge che non ha mezzi adeguati e non può procurarseli per ragioni oggettive
+
+**Criteri per determinare l'importo:**
+- Condizioni economiche di entrambi
+- Ragioni della separazione
+- Contributo dato alla famiglia
+- Durata del matrimonio
+- Età e salute
+
+**Assegno divorzile (dopo divorzio):**
+- Funzione assistenziale e compensativa
+- Considera il contributo dato alla famiglia durante il matrimonio
+- Non più automaticamente legato al "tenore di vita"
+
+### Mantenimento dei figli
+**Obbligo di entrambi i genitori** in proporzione al reddito.
+
+**Cosa comprende:**
+- Spese ordinarie (vitto, alloggio, vestiario, istruzione, sanità ordinaria)
+- Spese straordinarie (attività sportive, viaggi studio, spese mediche importanti)
+
+**Spese straordinarie:** Di solito al 50%, previo accordo (o secondo decisione del giudice)
+
+## AFFIDAMENTO DEI FIGLI
+
+### Affidamento condiviso (regola generale)
+- Entrambi i genitori mantengono la responsabilità genitoriale
+- Decisioni importanti prese insieme (scuola, salute, educazione)
+- Il figlio vive prevalentemente con un genitore (collocamento)
+- Tempi di frequentazione con l'altro genitore
+
+### Affidamento esclusivo (eccezione)
+Solo se l'affidamento condiviso è contrario all'interesse del minore.
+Esempi: violenza, abbandono, grave inadeguatezza.
+
+### Collocamento prevalente
+- Il figlio ha residenza principale presso un genitore
+- L'altro genitore ha diritto di visita secondo calendario
+- Tipico: weekend alternati + un pomeriggio infrasettimanale + metà vacanze
+
+### Collocamento paritario
+- Tempi uguali o quasi con entrambi i genitori (es. settimana alternata)
+- Richiede: vicinanza abitazioni, buon rapporto tra genitori, desiderio del minore
+
+### Ascolto del minore
+- Dai 12 anni: obbligatorio sentire il minore
+- Sotto i 12 anni: se capace di discernimento
+
+## CASA FAMILIARE
+
+### Assegnazione
+- Di solito assegnata al genitore collocatario dei figli
+- Scopo: tutelare l'interesse dei figli alla continuità abitativa
+- Non dipende dalla proprietà dell'immobile
+
+### Durata
+- Fino alla maggiore età dei figli
+- O fino all'indipendenza economica dei figli
+- Può cessare se il genitore assegnatario convive stabilmente con altro partner
+
+## VIOLENZA DOMESTICA
+
+### Ordine di protezione (Art. 342-bis c.c.)
+Il giudice può ordinare al familiare violento di:
+- Cessare la condotta pregiudizievole
+- Allontanarsi dalla casa familiare
+- Non avvicinarsi ai luoghi frequentati dalla vittima
+- Pagare un assegno periodico
+
+### Procedura
+- Ricorso al tribunale civile
+- Decisione entro pochi giorni
+- Durata: massimo 12 mesi (prorogabili)
+
+### Codice Rosso (L. 69/2019)
+- Procedura penale accelerata per reati di violenza domestica
+- Obbligo di sentire la vittima entro 3 giorni dalla denuncia
+- Reati: maltrattamenti, stalking, violenza sessuale, lesioni aggravate
+
+## FIGLI NATI FUORI DAL MATRIMONIO
+
+### Riconoscimento
+- Stessi diritti dei figli nati nel matrimonio
+- Riconoscimento: all'atto di nascita, con dichiarazione successiva, o per sentenza
+
+### Se il padre non riconosce
+- La madre può agire per l'accertamento giudiziale della paternità
+- Prova del DNA
+
+### Responsabilità genitoriale
+- Spetta a entrambi i genitori che hanno riconosciuto
+- Se riconosce solo uno, spetta solo a quello
+
+## UNIONI CIVILI E CONVIVENZE
+
+### Unioni civili (L. 76/2016)
+- Per coppie dello stesso sesso
+- Stessi diritti del matrimonio (eccetto adozione)
+- Scioglimento: come il divorzio
+
+### Convivenze di fatto
+- Coppie non sposate (etero o same-sex)
+- Diritti: assistenza in ospedale, subentro nel contratto di affitto, risarcimento danni
+- Contratto di convivenza: regola i rapporti patrimoniali
+
+## ADOZIONE
+
+### Adozione nazionale
+- Requisiti: coniugati da 3+ anni (o conviventi da 3+ prima del matrimonio)
+- Età: tra 18 e 45 anni più del minore
+- Procedura: dichiarazione di disponibilità, indagini, abbinamento, affidamento preadottivo
+
+### Adozione internazionale
+- Come la nazionale + procedure con il paese di origine
+- Necessario rivolgersi a ente autorizzato
+
+### Adozione in casi particolari (Art. 44)
+- Adozione del figlio del coniuge/partner
+- Adozione di minore orfano da parte di parenti
+- Adozione di minore con handicap da parte di chi lo ha in affido
+
+---
+Fonti: Codice Civile, L. 898/1970 (divorzio), L. 54/2006 (affidamento condiviso), L. 76/2016 (unioni civili)
+Aggiornato 2024
