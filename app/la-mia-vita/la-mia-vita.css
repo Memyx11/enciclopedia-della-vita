@@ -492,40 +492,110 @@
     .universe-header {
         padding: 15px 20px;
     }
-    
+
+    .greeting {
+        font-size: 1.4em;
+    }
+
     .planet-container {
         width: 320px;
         height: 320px;
     }
-    
+
     .area-node {
         width: 55px;
         height: 55px;
         margin: -27.5px 0 0 -27.5px;
     }
-    
+
     .node-content {
         width: 55px;
         height: 55px;
     }
-    
+
     .node-emoji {
         font-size: 1.4em;
     }
-    
+
     .orbit-ring {
         width: 280px;
         height: 280px;
     }
-    
+
+    .quick-insight {
+        padding: 16px 20px;
+        margin: 10px 16px;
+    }
+
     .quick-actions {
         flex-direction: column;
         width: 100%;
         padding: 0 20px;
     }
-    
+
     .action-btn {
         width: 100%;
         text-align: center;
+    }
+
+    .chat-fab {
+        bottom: 20px;
+        right: 20px;
+        width: 56px;
+        height: 56px;
+    }
+
+    .fab-pulse {
+        width: 56px;
+        height: 56px;
+    }
+}
+
+/* Small phones */
+@media (max-width: 380px) {
+    .planet-container {
+        width: 280px;
+        height: 280px;
+    }
+
+    .orbit-ring {
+        width: 240px;
+        height: 240px;
+    }
+
+    .area-node {
+        width: 48px;
+        height: 48px;
+        margin: -24px 0 0 -24px;
+    }
+
+    .node-content {
+        width: 48px;
+        height: 48px;
+    }
+
+    .node-emoji {
+        font-size: 1.2em;
+    }
+
+    .center-avatar {
+        width: 60px;
+        height: 60px;
+        font-size: 1.5em;
+    }
+
+    .greeting {
+        font-size: 1.2em;
+    }
+}
+
+/* Safe area insets for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .universe-main {
+        padding-bottom: calc(100px + env(safe-area-inset-bottom));
+    }
+
+    .chat-fab {
+        bottom: calc(20px + env(safe-area-inset-bottom));
     }
 }

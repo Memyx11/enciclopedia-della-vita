@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - NUR</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .offline-container {
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 24px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #845ef7 0%, #5c7cfa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        .retry-btn {
+            background: linear-gradient(135deg, #845ef7 0%, #5c7cfa 100%);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .retry-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(132, 94, 247, 0.4);
+        }
+
+        .retry-btn:active {
+            transform: translateY(0);
+        }
+
+        .status {
+            margin-top: 24px;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .status.online {
+            color: #51cf66;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">🌙</div>
+        <h1>Sei Offline</h1>
+        <p>
+            NUR ha bisogno di una connessione internet per funzionare al meglio.
+            <br><br>
+            Controlla la tua connessione e riprova.
+        </p>
+        <button class="retry-btn" onclick="checkConnection()">
+            Riprova
+        </button>
+        <p class="status" id="status">Controllo connessione...</p>
+    </div>
+
+    <script>
+        function checkConnection() {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Controllo connessione...';
+            statusEl.className = 'status';
+
+            if (navigator.onLine) {
+                statusEl.textContent = 'Connessione rilevata! Ricaricamento...';
+                statusEl.className = 'status online';
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+            } else {
+                statusEl.textContent = 'Ancora offline. Riprova tra poco.';
+            }
+        }
+
+        // Auto-check quando torna online
+        window.addEventListener('online', () => {
+            checkConnection();
+        });
+
+        // Check iniziale
+        setTimeout(checkConnection, 1000);
+    </script>
+</body>
+</html>

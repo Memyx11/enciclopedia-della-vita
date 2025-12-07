@@ -1,0 +1,49 @@
+{
+  "name": "Enciclopedia della Vita",
+  "short_name": "NUR",
+  "description": "Il tuo coach AI personale per ogni aspetto della vita. NUR ti accompagna nel tuo percorso di crescita.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#845ef7",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "it",
+  "categories": ["lifestyle", "productivity", "health"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Parla con NUR",
+      "short_name": "Chat",
+      "description": "Apri la chat con NUR",
+      "url": "/chat"
+    },
+    {
+      "name": "La Mia Vita",
+      "short_name": "Vita",
+      "description": "Visualizza le tue aree della vita",
+      "url": "/la-mia-vita"
+    },
+    {
+      "name": "Giornale",
+      "short_name": "Giornale",
+      "description": "Leggi i messaggi da NUR",
+      "url": "/giornale"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

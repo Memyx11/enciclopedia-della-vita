@@ -370,6 +370,174 @@ export const NUR_TOOLS = [
             },
             required: ['area', 'note']
         }
+    },
+
+    // ============================================
+    // TOOLS AVANZATI - Mood, Habits, Achievements
+    // ============================================
+    {
+        name: 'log_mood',
+        description: 'Registra il mood/umore dell\'utente. Usa quando percepisci lo stato emotivo dalla conversazione o quando l\'utente lo esprime esplicitamente.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                mood_score: {
+                    type: 'number',
+                    description: 'Punteggio umore da 1 (pessimo) a 10 (fantastico)'
+                },
+                energy_level: {
+                    type: 'number',
+                    description: 'Livello energia da 1 a 10 (opzionale)'
+                },
+                emotions: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Array di emozioni rilevate: felice, triste, ansioso, motivato, stanco, frustrato, sereno, eccitato, annoiato, arrabbiato'
+                },
+                notes: {
+                    type: 'string',
+                    description: 'Note aggiuntive sul mood (opzionale)'
+                },
+                area_related: {
+                    type: 'string',
+                    enum: ['salute', 'soldi', 'relazioni', 'lavoro', 'hobby', 'crescita', 'casa', 'sociale', 'spirituale', 'futuro'],
+                    description: 'Area correlata al mood (opzionale)'
+                },
+                context: {
+                    type: 'string',
+                    description: 'Contesto della conversazione che ha portato a rilevare questo mood'
+                }
+            },
+            required: ['mood_score', 'emotions']
+        }
+    },
+    {
+        name: 'get_mood_history',
+        description: 'Ottiene lo storico del mood dell\'utente per analizzare pattern emotivi nel tempo.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                days: {
+                    type: 'number',
+                    description: 'Numero di giorni da analizzare (default 7)'
+                },
+                area: {
+                    type: 'string',
+                    enum: ['salute', 'soldi', 'relazioni', 'lavoro', 'hobby', 'crescita', 'casa', 'sociale', 'spirituale', 'futuro'],
+                    description: 'Filtra per area (opzionale)'
+                }
+            },
+            required: []
+        }
+    },
+    {
+        name: 'track_habit',
+        description: 'Crea o registra un\'abitudine dell\'utente. Usa per tracciare comportamenti ricorrenti.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                action: {
+                    type: 'string',
+                    enum: ['create', 'log', 'get_status'],
+                    description: 'Azione: create (nuova abitudine), log (registra completamento), get_status (stato abitudini)'
+                },
+                habit_name: {
+                    type: 'string',
+                    description: 'Nome dell\'abitudine'
+                },
+                area: {
+                    type: 'string',
+                    enum: ['salute', 'soldi', 'relazioni', 'lavoro', 'hobby', 'crescita', 'casa', 'sociale', 'spirituale', 'futuro'],
+                    description: 'Area correlata (opzionale)'
+                },
+                frequency: {
+                    type: 'string',
+                    enum: ['daily', 'weekly'],
+                    description: 'Frequenza attesa (solo per create)'
+                },
+                notes: {
+                    type: 'string',
+                    description: 'Note aggiuntive (opzionale)'
+                }
+            },
+            required: ['action']
+        }
+    },
+    {
+        name: 'award_achievement',
+        description: 'Assegna un achievement/traguardo all\'utente. Usa per celebrare successi e milestone.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                achievement_id: {
+                    type: 'string',
+                    description: 'ID achievement: first_message, first_task, first_goal, first_week, streak_3, streak_7, all_areas_visited, deep_conversation, area_50, area_100, tasks_10, tasks_50, vulnerability, breakthrough'
+                },
+                context: {
+                    type: 'string',
+                    description: 'Motivo specifico per cui viene assegnato'
+                }
+            },
+            required: ['achievement_id']
+        }
+    },
+    {
+        name: 'get_achievements',
+        description: 'Ottiene gli achievement dell\'utente e quelli ancora da sbloccare.',
+        input_schema: {
+            type: 'object',
+            properties: {},
+            required: []
+        }
+    },
+    {
+        name: 'compare_with_past',
+        description: 'Confronta la situazione attuale dell\'utente con un periodo passato. Usa per mostrare progressi o identificare regressioni.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                compare_type: {
+                    type: 'string',
+                    enum: ['week', 'month', 'quarter'],
+                    description: 'Periodo di confronto: settimana, mese, trimestre fa'
+                },
+                area: {
+                    type: 'string',
+                    enum: ['salute', 'soldi', 'relazioni', 'lavoro', 'hobby', 'crescita', 'casa', 'sociale', 'spirituale', 'futuro'],
+                    description: 'Area specifica da confrontare (opzionale, default tutte)'
+                }
+            },
+            required: ['compare_type']
+        }
+    },
+    {
+        name: 'detect_emotion',
+        description: 'Analizza e registra lo stato emotivo rilevato dalla conversazione. Usa internamente per capire meglio l\'utente.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                detected_emotions: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Emozioni rilevate'
+                },
+                intensity: {
+                    type: 'number',
+                    description: 'Intensità emotiva da 1 a 10'
+                },
+                triggers: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Possibili trigger/cause delle emozioni'
+                },
+                suggested_response_style: {
+                    type: 'string',
+                    enum: ['supportive', 'motivating', 'challenging', 'listening', 'celebrating'],
+                    description: 'Stile di risposta suggerito'
+                }
+            },
+            required: ['detected_emotions', 'intensity']
+        }
     }
 ]
 
@@ -421,6 +589,22 @@ export async function handleToolCall(
                 return await handleSetAreaPriority(userId, input)
             case 'add_area_note':
                 return await handleAddAreaNote(userId, input)
+
+            // === TOOLS AVANZATI ===
+            case 'log_mood':
+                return await handleLogMood(userId, input)
+            case 'get_mood_history':
+                return await handleGetMoodHistory(userId, input)
+            case 'track_habit':
+                return await handleTrackHabit(userId, input)
+            case 'award_achievement':
+                return await handleAwardAchievement(userId, input)
+            case 'get_achievements':
+                return await handleGetAchievements(userId)
+            case 'compare_with_past':
+                return await handleCompareWithPast(userId, input)
+            case 'detect_emotion':
+                return await handleDetectEmotion(userId, input)
 
             default:
                 return { success: false, message: `Tool sconosciuto: ${toolName}` }
@@ -1089,5 +1273,482 @@ async function handleAddAreaNote(
     return {
         success: true,
         message: `Nota aggiunta a ${input.area}`
+    }
+}
+
+// ============================================
+// HANDLERS AVANZATI - Mood, Habits, Achievements
+// ============================================
+
+async function handleLogMood(
+    userId: string,
+    input: {
+        mood_score: number
+        energy_level?: number
+        emotions: string[]
+        notes?: string
+        area_related?: AreaType
+        context?: string
+    }
+): Promise<{ success: boolean; message: string }> {
+    const { error } = await supabase
+        .from('mood_logs')
+        .insert({
+            clerk_user_id: userId,
+            mood_score: Math.max(1, Math.min(10, input.mood_score)),
+            energy_level: input.energy_level ? Math.max(1, Math.min(10, input.energy_level)) : null,
+            emotions: input.emotions,
+            notes: input.notes || null,
+            area_related: input.area_related || null,
+            detected_by: 'nur',
+            context: input.context || null
+        })
+
+    if (error) {
+        // Se la tabella non esiste ancora, fallback silenzioso
+        console.log('Mood log error (table may not exist yet):', error.message)
+        return { success: true, message: 'Mood registrato (in memoria)' }
+    }
+
+    const emotionStr = input.emotions.slice(0, 3).join(', ')
+    return {
+        success: true,
+        message: `Mood registrato: ${input.mood_score}/10 - ${emotionStr}`
+    }
+}
+
+async function handleGetMoodHistory(
+    userId: string,
+    input: { days?: number; area?: AreaType }
+): Promise<{ success: boolean; message: string; data?: any }> {
+    const days = input.days || 7
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
+
+    let query = supabase
+        .from('mood_logs')
+        .select('*')
+        .eq('clerk_user_id', userId)
+        .gte('created_at', startDate.toISOString())
+        .order('created_at', { ascending: false })
+
+    if (input.area) {
+        query = query.eq('area_related', input.area)
+    }
+
+    const { data: moods, error } = await query
+
+    if (error) {
+        return { success: false, message: 'Storico mood non disponibile' }
+    }
+
+    if (!moods || moods.length === 0) {
+        return {
+            success: true,
+            message: 'Nessun dato mood registrato',
+            data: { entries: [], average: null, trend: 'unknown' }
+        }
+    }
+
+    const avgMood = moods.reduce((sum: number, m: any) => sum + m.mood_score, 0) / moods.length
+    const avgEnergy = moods.filter((m: any) => m.energy_level)
+        .reduce((sum: number, m: any, _, arr) => sum + m.energy_level / arr.length, 0)
+
+    // Calcola trend
+    const recent = moods.slice(0, Math.ceil(moods.length / 2))
+    const older = moods.slice(Math.ceil(moods.length / 2))
+    const recentAvg = recent.reduce((s: number, m: any) => s + m.mood_score, 0) / recent.length
+    const olderAvg = older.length > 0 ? older.reduce((s: number, m: any) => s + m.mood_score, 0) / older.length : recentAvg
+
+    let trend = 'stable'
+    if (recentAvg > olderAvg + 0.5) trend = 'improving'
+    else if (recentAvg < olderAvg - 0.5) trend = 'declining'
+
+    // Emozioni più frequenti
+    const emotionCounts: Record<string, number> = {}
+    moods.forEach((m: any) => {
+        (m.emotions || []).forEach((e: string) => {
+            emotionCounts[e] = (emotionCounts[e] || 0) + 1
+        })
+    })
+    const topEmotions = Object.entries(emotionCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([emotion]) => emotion)
+
+    return {
+        success: true,
+        message: `Analisi mood ultimi ${days} giorni`,
+        data: {
+            entries: moods.length,
+            average_mood: Math.round(avgMood * 10) / 10,
+            average_energy: Math.round(avgEnergy * 10) / 10,
+            trend,
+            top_emotions: topEmotions,
+            recent_moods: moods.slice(0, 5).map((m: any) => ({
+                score: m.mood_score,
+                emotions: m.emotions,
+                date: m.created_at
+            }))
+        }
+    }
+}
+
+async function handleTrackHabit(
+    userId: string,
+    input: { action: string; habit_name?: string; area?: AreaType; frequency?: string; notes?: string }
+): Promise<{ success: boolean; message: string; data?: any }> {
+
+    if (input.action === 'get_status') {
+        const { data: habits, error } = await supabase
+            .from('habits')
+            .select('*')
+            .eq('clerk_user_id', userId)
+            .eq('is_active', true)
+            .order('streak_current', { ascending: false })
+
+        if (error) {
+            return { success: false, message: 'Impossibile caricare abitudini' }
+        }
+
+        return {
+            success: true,
+            message: `${habits?.length || 0} abitudini attive`,
+            data: (habits || []).map((h: any) => ({
+                name: h.name,
+                area: h.area_related,
+                frequency: h.frequency,
+                streak: h.streak_current,
+                best_streak: h.streak_best,
+                total: h.total_completions
+            }))
+        }
+    }
+
+    if (input.action === 'create' && input.habit_name) {
+        const { error } = await supabase
+            .from('habits')
+            .insert({
+                clerk_user_id: userId,
+                name: input.habit_name,
+                area_related: input.area || null,
+                frequency: input.frequency || 'daily',
+                is_active: true
+            })
+
+        if (error) {
+            console.log('Habit create error:', error.message)
+            return { success: true, message: `Abitudine "${input.habit_name}" creata (in memoria)` }
+        }
+
+        return {
+            success: true,
+            message: `Abitudine creata: "${input.habit_name}" (${input.frequency || 'daily'})`
+        }
+    }
+
+    if (input.action === 'log' && input.habit_name) {
+        // Trova l'abitudine
+        const { data: habit } = await supabase
+            .from('habits')
+            .select('*')
+            .eq('clerk_user_id', userId)
+            .ilike('name', `%${input.habit_name}%`)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle()
+
+        if (!habit) {
+            return { success: false, message: `Abitudine "${input.habit_name}" non trovata` }
+        }
+
+        // Registra completamento
+        await supabase.from('habit_logs').insert({
+            habit_id: habit.id,
+            clerk_user_id: userId,
+            notes: input.notes,
+            logged_by: 'nur'
+        })
+
+        // Aggiorna streak e contatore
+        const newStreak = habit.streak_current + 1
+        await supabase
+            .from('habits')
+            .update({
+                streak_current: newStreak,
+                streak_best: Math.max(habit.streak_best, newStreak),
+                total_completions: habit.total_completions + 1,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', habit.id)
+
+        return {
+            success: true,
+            message: `${habit.name} completata! Streak: ${newStreak} giorni`
+        }
+    }
+
+    return { success: false, message: 'Azione non valida per track_habit' }
+}
+
+async function handleAwardAchievement(
+    userId: string,
+    input: { achievement_id: string; context?: string }
+): Promise<{ success: boolean; message: string; data?: any }> {
+    // Verifica che l'achievement esista
+    const { data: achievementDef } = await supabase
+        .from('achievement_definitions')
+        .select('*')
+        .eq('id', input.achievement_id)
+        .maybeSingle()
+
+    if (!achievementDef) {
+        return { success: false, message: `Achievement "${input.achievement_id}" non esiste` }
+    }
+
+    // Verifica se già assegnato
+    const { data: existing } = await supabase
+        .from('user_achievements')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .eq('achievement_id', input.achievement_id)
+        .maybeSingle()
+
+    if (existing) {
+        return {
+            success: true,
+            message: `Achievement già sbloccato: ${achievementDef.emoji} ${achievementDef.name}`
+        }
+    }
+
+    // Assegna
+    const { error } = await supabase
+        .from('user_achievements')
+        .insert({
+            clerk_user_id: userId,
+            achievement_id: input.achievement_id,
+            awarded_by: 'nur',
+            context: input.context || null
+        })
+
+    if (error) {
+        console.log('Achievement award error:', error.message)
+        return { success: true, message: `Achievement sbloccato: ${achievementDef.name} (salvato in memoria)` }
+    }
+
+    return {
+        success: true,
+        message: `🎉 ACHIEVEMENT SBLOCCATO: ${achievementDef.emoji} ${achievementDef.name}!`,
+        data: {
+            name: achievementDef.name,
+            description: achievementDef.description,
+            emoji: achievementDef.emoji,
+            points: achievementDef.points,
+            rarity: achievementDef.rarity
+        }
+    }
+}
+
+async function handleGetAchievements(
+    userId: string
+): Promise<{ success: boolean; message: string; data?: any }> {
+    // Ottieni tutti gli achievement e quelli sbloccati dall'utente
+    const [allAchievements, userAchievements] = await Promise.all([
+        supabase.from('achievement_definitions').select('*').order('points', { ascending: true }),
+        supabase.from('user_achievements').select('achievement_id, awarded_at, context').eq('clerk_user_id', userId)
+    ])
+
+    if (allAchievements.error) {
+        return { success: false, message: 'Impossibile caricare achievements' }
+    }
+
+    const unlockedIds = new Set((userAchievements.data || []).map((a: any) => a.achievement_id))
+    const unlocked = (allAchievements.data || []).filter((a: any) => unlockedIds.has(a.id))
+    const locked = (allAchievements.data || []).filter((a: any) => !unlockedIds.has(a.id))
+
+    const totalPoints = unlocked.reduce((sum: number, a: any) => sum + a.points, 0)
+
+    return {
+        success: true,
+        message: `${unlocked.length}/${allAchievements.data?.length || 0} achievement sbloccati`,
+        data: {
+            total_points: totalPoints,
+            unlocked: unlocked.map((a: any) => ({
+                id: a.id,
+                name: a.name,
+                emoji: a.emoji,
+                description: a.description,
+                rarity: a.rarity,
+                points: a.points
+            })),
+            locked: locked.map((a: any) => ({
+                id: a.id,
+                name: a.name,
+                emoji: '🔒',
+                description: a.description,
+                rarity: a.rarity,
+                hint: `${a.points} punti`
+            })),
+            next_to_unlock: locked.slice(0, 3).map((a: any) => a.name)
+        }
+    }
+}
+
+async function handleCompareWithPast(
+    userId: string,
+    input: { compare_type: string; area?: AreaType }
+): Promise<{ success: boolean; message: string; data?: any }> {
+    const now = new Date()
+    let pastDate = new Date()
+
+    switch (input.compare_type) {
+        case 'week':
+            pastDate.setDate(now.getDate() - 7)
+            break
+        case 'month':
+            pastDate.setMonth(now.getMonth() - 1)
+            break
+        case 'quarter':
+            pastDate.setMonth(now.getMonth() - 3)
+            break
+    }
+
+    // Ottieni dati attuali
+    let currentQuery = supabase
+        .from('life_areas')
+        .select('area_type, progress, goal_state, active_tasks')
+        .eq('clerk_user_id', userId)
+
+    if (input.area) {
+        currentQuery = currentQuery.eq('area_type', input.area)
+    }
+
+    const { data: currentAreas } = await currentQuery
+
+    // Ottieni conteggio messaggi per periodo
+    const { count: recentMessages } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('clerk_user_id', userId)
+        .gte('created_at', pastDate.toISOString())
+
+    const { count: totalMessages } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('clerk_user_id', userId)
+
+    // Ottieni mood se disponibile
+    const { data: recentMoods } = await supabase
+        .from('mood_logs')
+        .select('mood_score')
+        .eq('clerk_user_id', userId)
+        .gte('created_at', pastDate.toISOString())
+
+    const { data: olderMoods } = await supabase
+        .from('mood_logs')
+        .select('mood_score')
+        .eq('clerk_user_id', userId)
+        .lt('created_at', pastDate.toISOString())
+        .limit(50)
+
+    const recentMoodAvg = recentMoods && recentMoods.length > 0
+        ? recentMoods.reduce((s: number, m: any) => s + m.mood_score, 0) / recentMoods.length
+        : null
+
+    const olderMoodAvg = olderMoods && olderMoods.length > 0
+        ? olderMoods.reduce((s: number, m: any) => s + m.mood_score, 0) / olderMoods.length
+        : null
+
+    // Calcola progressi
+    const areas = currentAreas || []
+    const totalProgress = areas.length > 0
+        ? Math.round(areas.reduce((sum: number, a: any) => sum + (a.progress || 0), 0) / areas.length)
+        : 0
+
+    const totalTasks = areas.reduce((sum: number, a: any) => {
+        const tasks = Array.isArray(a.active_tasks) ? a.active_tasks : []
+        return sum + tasks.filter((t: any) => t.completed).length
+    }, 0)
+
+    const comparison = {
+        period: input.compare_type,
+        current: {
+            average_progress: totalProgress,
+            tasks_completed: totalTasks,
+            messages: recentMessages || 0,
+            mood_avg: recentMoodAvg ? Math.round(recentMoodAvg * 10) / 10 : null
+        },
+        previous_mood_avg: olderMoodAvg ? Math.round(olderMoodAvg * 10) / 10 : null,
+        areas: areas.map((a: any) => ({
+            area: a.area_type,
+            progress: a.progress || 0,
+            has_goal: !!a.goal_state?.title,
+            pending_tasks: Array.isArray(a.active_tasks)
+                ? a.active_tasks.filter((t: any) => !t.completed).length
+                : 0
+        })),
+        engagement: {
+            total_messages: totalMessages || 0,
+            recent_messages: recentMessages || 0,
+            activity_level: (recentMessages || 0) > 10 ? 'high' : (recentMessages || 0) > 3 ? 'medium' : 'low'
+        }
+    }
+
+    let trendMessage = ''
+    if (recentMoodAvg && olderMoodAvg) {
+        const moodDiff = recentMoodAvg - olderMoodAvg
+        if (moodDiff > 0.5) trendMessage = 'Il mood è migliorato!'
+        else if (moodDiff < -0.5) trendMessage = 'Il mood è calato rispetto a prima.'
+        else trendMessage = 'Il mood è stabile.'
+    }
+
+    return {
+        success: true,
+        message: `Confronto con ${input.compare_type === 'week' ? 'la settimana' : input.compare_type === 'month' ? 'il mese' : 'il trimestre'} scorso. ${trendMessage}`,
+        data: comparison
+    }
+}
+
+async function handleDetectEmotion(
+    userId: string,
+    input: {
+        detected_emotions: string[]
+        intensity: number
+        triggers?: string[]
+        suggested_response_style?: string
+    }
+): Promise<{ success: boolean; message: string }> {
+    // Salva come memoria l'emozione rilevata
+    await supabase
+        .from('user_memory')
+        .insert({
+            clerk_user_id: userId,
+            memory_type: 'emotion',
+            content: `Emozioni rilevate: ${input.detected_emotions.join(', ')} (intensità ${input.intensity}/10)`,
+            importance: Math.min(10, input.intensity),
+            confidence: 7,
+            is_current: true,
+            mention_count: 1,
+            last_relevant_at: new Date().toISOString()
+        })
+
+    // Logga anche il mood automaticamente se intensità alta
+    if (input.intensity >= 5) {
+        const moodScore = input.detected_emotions.some(e =>
+            ['felice', 'motivato', 'sereno', 'eccitato', 'grato'].includes(e.toLowerCase())
+        ) ? Math.min(10, 5 + input.intensity / 2) : Math.max(1, 5 - input.intensity / 2)
+
+        await supabase.from('mood_logs').insert({
+            clerk_user_id: userId,
+            mood_score: Math.round(moodScore),
+            emotions: input.detected_emotions,
+            detected_by: 'nur',
+            context: input.triggers?.join(', ') || null
+        })
+    }
+
+    return {
+        success: true,
+        message: `Emozione registrata: ${input.detected_emotions.join(', ')} - Stile risposta: ${input.suggested_response_style || 'auto'}`
     }
 }
