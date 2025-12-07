@@ -281,31 +281,42 @@ function ChatContent() {
         }
     }, [searchParams])
 
-    // Auto-scroll all'ultimo messaggio
-    useEffect(() => {
-        if (messages.length === 0) return
+    // Ref per sapere se è il primo caricamento
+    const isInitialLoad = useRef(true)
 
-        // Usa un piccolo delay per assicurarsi che il DOM sia aggiornato
+    // Scroll iniziale dopo caricamento - va all'ultimo messaggio
+    useEffect(() => {
+        if (!loading && messages.length > 0 && isInitialLoad.current) {
+            isInitialLoad.current = false
+            // Delay più lungo per assicurarsi che il rendering sia completo
+            setTimeout(() => {
+                if (chatRef.current) {
+                    // Scroll al fondo del container
+                    chatRef.current.scrollTop = chatRef.current.scrollHeight
+                }
+            }, 200)
+        }
+    }, [loading, messages.length])
+
+    // Auto-scroll quando arrivano nuovi messaggi (non al primo caricamento)
+    useEffect(() => {
+        if (messages.length === 0 || isInitialLoad.current) return
+
+        // Scroll solo se siamo già vicini al fondo (per non interrompere la lettura)
         const timer = setTimeout(() => {
             if (chatRef.current) {
-                // Scorri il container dei messaggi, non la pagina intera
-                chatRef.current.scrollTop = chatRef.current.scrollHeight
+                const { scrollTop, scrollHeight, clientHeight } = chatRef.current
+                const isNearBottom = scrollHeight - scrollTop - clientHeight < 150
+
+                // Scrolla solo se siamo già vicini al fondo o se stiamo inviando
+                if (isNearBottom || status === 'streaming') {
+                    chatRef.current.scrollTop = chatRef.current.scrollHeight
+                }
             }
         }, 50)
 
         return () => clearTimeout(timer)
-    }, [messages])
-
-    // Scroll iniziale dopo caricamento
-    useEffect(() => {
-        if (!loading && messages.length > 0) {
-            setTimeout(() => {
-                if (chatRef.current) {
-                    chatRef.current.scrollTop = chatRef.current.scrollHeight
-                }
-            }, 150)
-        }
-    }, [loading])
+    }, [messages, status])
 
     const getTimestamp = () => {
         return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
