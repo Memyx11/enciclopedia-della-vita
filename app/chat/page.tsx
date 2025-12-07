@@ -313,17 +313,8 @@ function ChatContent() {
         // Aggiungi messaggio utente alla UI
         setMessages(prev => [...prev, userMessage])
         setInput('')
-        setStatus('streaming')
-        setStatusText('NUR sta scrivendo...')
-
-        // Crea placeholder per la risposta streaming
-        const streamingMessage: Message = {
-            content: '',
-            role: 'assistant',
-            timestamp: getTimestamp(),
-            isStreaming: true
-        }
-        setMessages(prev => [...prev, streamingMessage])
+        setStatus('thinking')
+        setStatusText('NUR sta pensando...')
 
         try {
             // Prepara la storia recente
@@ -348,6 +339,19 @@ function ChatContent() {
             if (!response.ok) {
                 throw new Error('Stream request failed')
             }
+
+            // Ora che abbiamo risposta, passa a streaming
+            setStatus('streaming')
+            setStatusText('NUR sta scrivendo...')
+
+            // Crea placeholder per la risposta streaming
+            const streamingMessage: Message = {
+                content: '',
+                role: 'assistant',
+                timestamp: getTimestamp(),
+                isStreaming: true
+            }
+            setMessages(prev => [...prev, streamingMessage])
 
             const reader = response.body?.getReader()
             const decoder = new TextDecoder()
@@ -641,7 +645,9 @@ function ChatContent() {
                         onClick={sendMessage}
                         disabled={status !== 'ready' || !input.trim()}
                     >
-                        {status === 'streaming' ? (
+                        {status === 'thinking' ? (
+                            <span className="thinking-indicator">💭</span>
+                        ) : status === 'streaming' ? (
                             <span className="sending">...</span>
                         ) : (
                             <span>→</span>

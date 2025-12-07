@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@clerk/nextjs'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 import './giornale.css'
 
 interface JournalEntry {
@@ -19,18 +20,21 @@ interface JournalEntry {
     metadata?: Record<string, any>
 }
 
+// Tipi di contenuto che NUR può creare
 const entryTypeConfig: Record<string, { emoji: string; label: string; color: string }> = {
-    'nur_message': { emoji: '💬', label: 'Da NUR', color: '#845ef7' },
-    'insight': { emoji: '💡', label: 'Insight', color: '#fab005' },
-    'achievement': { emoji: '🏆', label: 'Traguardo', color: '#51cf66' },
-    'suggestion': { emoji: '✨', label: 'Suggerimento', color: '#339af0' },
+    'nur_message': { emoji: '💬', label: 'Messaggio', color: '#845ef7' },
+    'resource': { emoji: '📚', label: 'Risorsa', color: '#339af0' },
     'reminder': { emoji: '🔔', label: 'Promemoria', color: '#ff922b' },
-    'article': { emoji: '📖', label: 'Articolo', color: '#868e96' },
     'reflection_prompt': { emoji: '🤔', label: 'Riflessione', color: '#cc5de8' },
-    'weekly_summary': { emoji: '📊', label: 'Riepilogo', color: '#20c997' },
-    'progress_update': { emoji: '📈', label: 'Progressi', color: '#22b8cf' },
     'challenge': { emoji: '🎯', label: 'Sfida', color: '#f783ac' },
-    'quote': { emoji: '💭', label: 'Citazione', color: '#adb5bd' }
+    'celebration': { emoji: '🎉', label: 'Celebrazione', color: '#51cf66' },
+    'quote': { emoji: '💭', label: 'Citazione', color: '#adb5bd' },
+    'weekly_summary': { emoji: '📊', label: 'Riepilogo', color: '#20c997' },
+    'suggestion': { emoji: '✨', label: 'Suggerimento', color: '#339af0' },
+    'achievement': { emoji: '🏆', label: 'Traguardo', color: '#51cf66' },
+    'article': { emoji: '📖', label: 'Articolo', color: '#868e96' },
+    'progress_update': { emoji: '📈', label: 'Progressi', color: '#22b8cf' },
+    'insight': { emoji: '💡', label: 'Insight', color: '#fab005' }
 }
 
 const areaEmojis: Record<string, string> = {
@@ -46,31 +50,47 @@ const areaEmojis: Record<string, string> = {
     'futuro': '🎯'
 }
 
-export default function GiornalePage() {
+export default function ScrivaniaNURPage() {
     const { user, isLoaded } = useUser()
     const [entries, setEntries] = useState<JournalEntry[]>([])
     const [loading, setLoading] = useState(true)
-    const [unreadCount, setUnreadCount] = useState(0)
-    const [filter, setFilter] = useState<'all' | 'unread' | 'pinned'>('all')
-    const [generating, setGenerating] = useState(false)
+    const [filter, setFilter] = useState<'all' | 'resources' | 'messages' | 'pinned'>('all')
 
     const fetchEntries = useCallback(async () => {
         if (!user) return
 
         try {
-            const includeRead = filter !== 'unread'
-            const response = await fetch(
-                `/api/journal?userId=${user.id}&includeRead=${includeRead}&limit=50`
-            )
-            const data = await response.json()
+            // Escludiamo gli insight automatici - mostriamo solo contenuti creati da NUR intenzionalmente
+            const { data, error } = await supabase
+                .from('journal_entries')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .not('entry_type', 'eq', 'insight') // Escludi insight automatici
+                .order('is_pinned', { ascending: false })
+                .order('created_at', { ascending: false })
+                .limit(50)
 
-            if (data.success) {
-                let filtered = data.entries || []
-                if (filter === 'pinned') {
-                    filtered = filtered.filter((e: JournalEntry) => e.is_pinned)
-                }
-                setEntries(filtered)
+            if (error) {
+                console.error('Error fetching journal:', error)
+                return
             }
+
+            let filtered = data || []
+
+            // Applica filtri
+            if (filter === 'resources') {
+                filtered = filtered.filter(e =>
+                    ['resource', 'article', 'quote'].includes(e.entry_type)
+                )
+            } else if (filter === 'messages') {
+                filtered = filtered.filter(e =>
+                    ['nur_message', 'reminder', 'reflection_prompt', 'challenge', 'suggestion'].includes(e.entry_type)
+                )
+            } else if (filter === 'pinned') {
+                filtered = filtered.filter(e => e.is_pinned)
+            }
+
+            setEntries(filtered)
         } catch (error) {
             console.error('Error fetching journal:', error)
         } finally {
@@ -78,85 +98,25 @@ export default function GiornalePage() {
         }
     }, [user, filter])
 
-    const fetchUnreadCount = useCallback(async () => {
-        if (!user) return
-
-        try {
-            const response = await fetch(
-                `/api/journal?userId=${user.id}&action=unread_count`
-            )
-            const data = await response.json()
-            if (data.success) {
-                setUnreadCount(data.count)
-            }
-        } catch (error) {
-            console.error('Error fetching unread count:', error)
-        }
-    }, [user])
-
     useEffect(() => {
         if (isLoaded && user) {
             fetchEntries()
-            fetchUnreadCount()
+        } else if (isLoaded && !user) {
+            setLoading(false)
         }
-    }, [isLoaded, user, fetchEntries, fetchUnreadCount])
-
-    const markAsSeen = async (entryId: string) => {
-        if (!user) return
-
-        try {
-            await fetch('/api/journal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: user.id,
-                    action: 'mark_seen',
-                    entryId
-                })
-            })
-
-            setEntries(prev =>
-                prev.map(e => e.id === entryId ? { ...e, is_seen: true } : e)
-            )
-            setUnreadCount(prev => Math.max(0, prev - 1))
-        } catch (error) {
-            console.error('Error marking as seen:', error)
-        }
-    }
-
-    const markAllSeen = async () => {
-        if (!user) return
-
-        try {
-            await fetch('/api/journal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: user.id,
-                    action: 'mark_all_seen'
-                })
-            })
-
-            setEntries(prev => prev.map(e => ({ ...e, is_seen: true })))
-            setUnreadCount(0)
-        } catch (error) {
-            console.error('Error marking all as seen:', error)
-        }
-    }
+    }, [isLoaded, user, fetchEntries])
 
     const togglePin = async (entryId: string) => {
         if (!user) return
 
+        const entry = entries.find(e => e.id === entryId)
+        if (!entry) return
+
         try {
-            await fetch('/api/journal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: user.id,
-                    action: 'toggle_pin',
-                    entryId
-                })
-            })
+            await supabase
+                .from('journal_entries')
+                .update({ is_pinned: !entry.is_pinned })
+                .eq('id', entryId)
 
             setEntries(prev =>
                 prev.map(e => e.id === entryId ? { ...e, is_pinned: !e.is_pinned } : e)
@@ -166,23 +126,18 @@ export default function GiornalePage() {
         }
     }
 
-    const generateDaily = async () => {
-        if (!user || generating) return
+    const deleteEntry = async (entryId: string) => {
+        if (!user || !confirm('Vuoi eliminare questo contenuto?')) return
 
-        setGenerating(true)
         try {
-            const response = await fetch(
-                `/api/journal?userId=${user.id}&action=generate_daily`
-            )
-            const data = await response.json()
+            await supabase
+                .from('journal_entries')
+                .delete()
+                .eq('id', entryId)
 
-            if (data.success && data.entry) {
-                setEntries(prev => [data.entry, ...prev])
-            }
+            setEntries(prev => prev.filter(e => e.id !== entryId))
         } catch (error) {
-            console.error('Error generating daily:', error)
-        } finally {
-            setGenerating(false)
+            console.error('Error deleting entry:', error)
         }
     }
 
@@ -195,7 +150,7 @@ export default function GiornalePage() {
 
         if (diffHours < 1) {
             const mins = Math.floor(diffMs / (1000 * 60))
-            return `${mins} min fa`
+            return mins <= 1 ? 'Adesso' : `${mins} min fa`
         } else if (diffHours < 24) {
             return `${Math.floor(diffHours)} ore fa`
         } else if (diffDays < 7) {
@@ -212,11 +167,11 @@ export default function GiornalePage() {
 
     if (!user) {
         return (
-            <div className="journal-container">
+            <div className="scrivania-container">
                 <div className="bg-gradient"></div>
                 <div className="auth-prompt">
-                    <h1>📰 Il Tuo Giornale</h1>
-                    <p>Accedi per vedere i tuoi messaggi personalizzati da NUR</p>
+                    <h1>📋 Scrivania NUR</h1>
+                    <p>Accedi per vedere i contenuti che NUR ha preparato per te</p>
                     <Link href="/" className="btn btn-primary">
                         Vai alla Home
                     </Link>
@@ -226,44 +181,66 @@ export default function GiornalePage() {
     }
 
     const userName = user?.firstName || user?.emailAddresses[0]?.emailAddress?.split('@')[0] || 'Amico'
+    const pinnedCount = entries.filter(e => e.is_pinned).length
+    const resourcesCount = entries.filter(e => ['resource', 'article', 'quote'].includes(e.entry_type)).length
 
     return (
-        <div className="journal-container">
+        <div className="scrivania-container">
             <div className="bg-gradient"></div>
 
-            <header className="journal-header">
+            <header className="scrivania-header">
                 <div className="header-left">
-                    <Link href="/" className="back-link">← Home</Link>
+                    <Link href="/la-mia-vita" className="back-link">← Vita</Link>
                 </div>
                 <div className="header-center">
-                    <span className="header-icon">📰</span>
-                    <h1>Il Tuo Giornale</h1>
+                    <span className="header-icon">📋</span>
+                    <h1>Scrivania NUR</h1>
                 </div>
                 <div className="header-right">
-                    {unreadCount > 0 && (
-                        <span className="unread-badge">{unreadCount}</span>
-                    )}
+                    <Link href="/chat" className="chat-link">💬</Link>
                 </div>
             </header>
 
-            <div className="journal-greeting">
-                <h2>Ciao {userName}!</h2>
-                <p>Ecco cosa NUR ha da dirti oggi</p>
+            <div className="scrivania-intro">
+                <p>Ciao {userName}! Qui trovi tutto ciò che ho preparato per te.</p>
             </div>
 
-            <div className="journal-actions">
+            {/* Stats rapide */}
+            <div className="quick-stats">
+                <div className="stat-item">
+                    <span className="stat-value">{entries.length}</span>
+                    <span className="stat-label">Contenuti</span>
+                </div>
+                <div className="stat-item">
+                    <span className="stat-value">{resourcesCount}</span>
+                    <span className="stat-label">Risorse</span>
+                </div>
+                <div className="stat-item">
+                    <span className="stat-value">{pinnedCount}</span>
+                    <span className="stat-label">Salvati</span>
+                </div>
+            </div>
+
+            {/* Filtri */}
+            <div className="filter-section">
                 <div className="filter-tabs">
                     <button
                         className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
                         onClick={() => setFilter('all')}
                     >
-                        Tutti
+                        Tutto
                     </button>
                     <button
-                        className={`filter-tab ${filter === 'unread' ? 'active' : ''}`}
-                        onClick={() => setFilter('unread')}
+                        className={`filter-tab ${filter === 'messages' ? 'active' : ''}`}
+                        onClick={() => setFilter('messages')}
                     >
-                        Non letti {unreadCount > 0 && `(${unreadCount})`}
+                        💬 Messaggi
+                    </button>
+                    <button
+                        className={`filter-tab ${filter === 'resources' ? 'active' : ''}`}
+                        onClick={() => setFilter('resources')}
+                    >
+                        📚 Risorse
                     </button>
                     <button
                         className={`filter-tab ${filter === 'pinned' ? 'active' : ''}`}
@@ -272,50 +249,35 @@ export default function GiornalePage() {
                         📌 Salvati
                     </button>
                 </div>
-
-                <div className="action-buttons">
-                    {unreadCount > 0 && (
-                        <button className="action-btn" onClick={markAllSeen}>
-                            ✓ Segna tutti letti
-                        </button>
-                    )}
-                    <button
-                        className="action-btn primary"
-                        onClick={generateDaily}
-                        disabled={generating}
-                    >
-                        {generating ? '⏳ Generando...' : '✨ Messaggio da NUR'}
-                    </button>
-                </div>
             </div>
 
-            <main className="journal-content">
+            <main className="scrivania-content">
                 {loading ? (
                     <div className="loading-state">
                         <div className="loading-spinner"></div>
-                        <p>Carico il tuo giornale...</p>
+                        <p>Carico la tua scrivania...</p>
                     </div>
                 ) : entries.length === 0 ? (
                     <div className="empty-state">
-                        <div className="empty-icon">📰</div>
+                        <div className="empty-icon">📋</div>
                         <h3>
-                            {filter === 'unread'
-                                ? 'Tutto letto!'
-                                : filter === 'pinned'
-                                ? 'Nessun messaggio salvato'
-                                : 'Il tuo giornale è vuoto'}
+                            {filter === 'pinned'
+                                ? 'Nessun contenuto salvato'
+                                : filter === 'resources'
+                                ? 'Nessuna risorsa ancora'
+                                : filter === 'messages'
+                                ? 'Nessun messaggio ancora'
+                                : 'La tua scrivania è vuota'}
                         </h3>
                         <p>
-                            {filter === 'all'
-                                ? 'Inizia a parlare con NUR per ricevere messaggi personalizzati'
-                                : 'Torna alla vista "Tutti" per vedere i messaggi'}
+                            Parla con me in chat e ti preparerò contenuti personalizzati!
                         </p>
                         <Link href="/chat" className="btn btn-primary">
                             💬 Parla con NUR
                         </Link>
                     </div>
                 ) : (
-                    <div className="entries-list">
+                    <div className="entries-grid">
                         {entries.map(entry => {
                             const config = entryTypeConfig[entry.entry_type] || {
                                 emoji: '📝',
@@ -326,23 +288,17 @@ export default function GiornalePage() {
                             return (
                                 <article
                                     key={entry.id}
-                                    className={`journal-entry ${!entry.is_seen ? 'unread' : ''} ${entry.is_pinned ? 'pinned' : ''}`}
-                                    onClick={() => !entry.is_seen && markAsSeen(entry.id)}
+                                    className={`entry-card ${entry.is_pinned ? 'pinned' : ''}`}
                                     style={{ '--entry-color': config.color } as React.CSSProperties}
                                 >
+                                    {entry.is_pinned && <div className="pinned-badge">📌</div>}
+
                                     <div className="entry-header">
                                         <div className="entry-type">
                                             <span className="type-emoji">{config.emoji}</span>
                                             <span className="type-label">{config.label}</span>
                                         </div>
-                                        <div className="entry-meta">
-                                            {entry.area_related && (
-                                                <span className="entry-area">
-                                                    {areaEmojis[entry.area_related]} {entry.area_related}
-                                                </span>
-                                            )}
-                                            <span className="entry-time">{formatDate(entry.created_at)}</span>
-                                        </div>
+                                        <span className="entry-time">{formatDate(entry.created_at)}</span>
                                     </div>
 
                                     {entry.title && (
@@ -351,29 +307,37 @@ export default function GiornalePage() {
 
                                     <p className="entry-content">{entry.content}</p>
 
+                                    {entry.area_related && (
+                                        <div className="entry-area">
+                                            {areaEmojis[entry.area_related]} {entry.area_related}
+                                        </div>
+                                    )}
+
                                     <div className="entry-actions">
                                         <button
-                                            className={`pin-btn ${entry.is_pinned ? 'active' : ''}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                togglePin(entry.id)
-                                            }}
+                                            className={`action-btn ${entry.is_pinned ? 'active' : ''}`}
+                                            onClick={() => togglePin(entry.id)}
                                         >
-                                            📌 {entry.is_pinned ? 'Salvato' : 'Salva'}
+                                            {entry.is_pinned ? '📌 Salvato' : '📌 Salva'}
                                         </button>
-                                        {entry.entry_type === 'suggestion' || entry.entry_type === 'challenge' ? (
-                                            <Link
-                                                href={`/chat?context=${encodeURIComponent(entry.content)}`}
-                                                className="action-link"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                💬 Parlane con NUR
-                                            </Link>
-                                        ) : null}
-                                    </div>
 
-                                    {!entry.is_seen && <div className="unread-indicator"></div>}
-                                    {entry.is_pinned && <div className="pinned-indicator">📌</div>}
+                                        {(entry.entry_type === 'challenge' || entry.entry_type === 'reflection_prompt' || entry.entry_type === 'suggestion') && (
+                                            <Link
+                                                href={`/chat?context=${encodeURIComponent(`Parliamo di: ${entry.content}`)}`}
+                                                className="action-btn primary"
+                                            >
+                                                💬 Parliamone
+                                            </Link>
+                                        )}
+
+                                        <button
+                                            className="action-btn delete"
+                                            onClick={() => deleteEntry(entry.id)}
+                                            title="Elimina"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
                                 </article>
                             )
                         })}
@@ -381,7 +345,8 @@ export default function GiornalePage() {
                 )}
             </main>
 
-            <nav className="journal-nav">
+            {/* Bottom Navigation */}
+            <nav className="bottom-nav">
                 <Link href="/" className="nav-item">
                     <span className="nav-icon">🏠</span>
                     <span className="nav-label">Home</span>
@@ -391,12 +356,16 @@ export default function GiornalePage() {
                     <span className="nav-label">Chat</span>
                 </Link>
                 <Link href="/giornale" className="nav-item active">
-                    <span className="nav-icon">📰</span>
-                    <span className="nav-label">Giornale</span>
+                    <span className="nav-icon">📋</span>
+                    <span className="nav-label">Scrivania</span>
                 </Link>
                 <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🌌</span>
                     <span className="nav-label">Vita</span>
+                </Link>
+                <Link href="/profilo" className="nav-item">
+                    <span className="nav-icon">🏆</span>
+                    <span className="nav-label">Profilo</span>
                 </Link>
             </nav>
         </div>
