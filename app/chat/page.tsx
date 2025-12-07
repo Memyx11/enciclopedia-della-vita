@@ -283,16 +283,27 @@ function ChatContent() {
 
     // Auto-scroll all'ultimo messaggio
     useEffect(() => {
-        // Scroll all'ultimo messaggio quando cambiano i messaggi
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        if (messages.length === 0) return
+
+        // Usa un piccolo delay per assicurarsi che il DOM sia aggiornato
+        const timer = setTimeout(() => {
+            if (chatRef.current) {
+                // Scorri il container dei messaggi, non la pagina intera
+                chatRef.current.scrollTop = chatRef.current.scrollHeight
+            }
+        }, 50)
+
+        return () => clearTimeout(timer)
     }, [messages])
 
     // Scroll iniziale dopo caricamento
     useEffect(() => {
         if (!loading && messages.length > 0) {
             setTimeout(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-            }, 100)
+                if (chatRef.current) {
+                    chatRef.current.scrollTop = chatRef.current.scrollHeight
+                }
+            }, 150)
         }
     }, [loading])
 

@@ -222,6 +222,9 @@
     flex: 1;
     overflow-y: auto;
     padding: 20px 16px;
+    padding-bottom: 24px;
+    /* Assicura che il contenuto non vada sotto il footer */
+    scroll-padding-bottom: 20px;
 }
 
 .chat-main::-webkit-scrollbar {
@@ -325,6 +328,8 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    /* Spazio extra in fondo per evitare che l'ultimo messaggio sia tagliato */
+    padding-bottom: 16px;
 }
 
 .message {
