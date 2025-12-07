@@ -17,11 +17,13 @@
 
 /* Page Container */
 .chat-page {
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height per mobile */
     display: flex;
     flex-direction: column;
     background: var(--bg-dark);
     color: var(--text-primary);
+    overflow: hidden; /* Impedisce scroll sulla page intera */
 }
 
 .bg-gradient {
@@ -221,10 +223,12 @@
 .chat-main {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 20px 16px;
     padding-bottom: 24px;
-    /* Assicura che il contenuto non vada sotto il footer */
     scroll-padding-bottom: 20px;
+    /* Garantisce che flex: 1 funzioni correttamente */
+    min-height: 0;
 }
 
 .chat-main::-webkit-scrollbar {

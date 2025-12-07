@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, Suspense } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -282,40 +282,44 @@ function ChatContent() {
     }, [searchParams])
 
     // Ref per sapere se è il primo caricamento
-    const isInitialLoad = useRef(true)
+    const hasScrolledInitially = useRef(false)
 
     // Scroll iniziale dopo caricamento - va all'ultimo messaggio
-    useEffect(() => {
-        if (!loading && messages.length > 0 && isInitialLoad.current) {
-            isInitialLoad.current = false
-            // Delay più lungo per assicurarsi che il rendering sia completo
-            setTimeout(() => {
+    // useLayoutEffect per eseguire PRIMA del paint del browser
+    useLayoutEffect(() => {
+        if (!loading && messages.length > 0 && !hasScrolledInitially.current) {
+            hasScrolledInitially.current = true
+
+            // Piccolo timeout per assicurarsi che il DOM sia pronto
+            const timer = setTimeout(() => {
                 if (chatRef.current) {
-                    // Scroll al fondo del container
+                    // Scrolla direttamente il container al fondo
                     chatRef.current.scrollTop = chatRef.current.scrollHeight
                 }
-            }, 200)
+            }, 50)
+
+            return () => clearTimeout(timer)
         }
     }, [loading, messages.length])
 
-    // Auto-scroll quando arrivano nuovi messaggi (non al primo caricamento)
+    // Auto-scroll quando arrivano nuovi messaggi (dopo il primo caricamento)
     useEffect(() => {
-        if (messages.length === 0 || isInitialLoad.current) return
+        if (messages.length === 0 || !hasScrolledInitially.current) return
 
         // Scroll solo se siamo già vicini al fondo (per non interrompere la lettura)
-        const timer = setTimeout(() => {
-            if (chatRef.current) {
-                const { scrollTop, scrollHeight, clientHeight } = chatRef.current
-                const isNearBottom = scrollHeight - scrollTop - clientHeight < 150
+        if (chatRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = chatRef.current
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 200
 
-                // Scrolla solo se siamo già vicini al fondo o se stiamo inviando
-                if (isNearBottom || status === 'streaming') {
-                    chatRef.current.scrollTop = chatRef.current.scrollHeight
-                }
+            // Scrolla solo se siamo già vicini al fondo o durante streaming
+            if (isNearBottom || status === 'streaming') {
+                // Usa scrollTop per scroll più affidabile
+                chatRef.current.scrollTo({
+                    top: chatRef.current.scrollHeight,
+                    behavior: 'smooth'
+                })
             }
-        }, 50)
-
-        return () => clearTimeout(timer)
+        }
     }, [messages, status])
 
     const getTimestamp = () => {
