@@ -168,6 +168,8 @@ function ChatContent() {
     const [currentArea, setCurrentArea] = useState<string | null>(null)
     const [insightsCount, setInsightsCount] = useState(0)
     const chatRef = useRef<HTMLDivElement>(null)
+    const inputRef = useRef<HTMLTextAreaElement>(null)
+    const messagesEndRef = useRef<HTMLDivElement>(null)
 
     // AI Disclaimer
     const { showDisclaimer, acceptDisclaimer } = useAIDisclaimer()
@@ -279,12 +281,20 @@ function ChatContent() {
         }
     }, [searchParams])
 
-    // Auto-scroll
+    // Auto-scroll all'ultimo messaggio
     useEffect(() => {
-        if (chatRef.current) {
-            chatRef.current.scrollTop = chatRef.current.scrollHeight
-        }
+        // Scroll all'ultimo messaggio quando cambiano i messaggi
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
+
+    // Scroll iniziale dopo caricamento
+    useEffect(() => {
+        if (!loading && messages.length > 0) {
+            setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+            }, 100)
+        }
+    }, [loading])
 
     const getTimestamp = () => {
         return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
@@ -594,6 +604,8 @@ function ChatContent() {
                                 )}
                             </div>
                         ))}
+                        {/* Elemento invisibile per scroll */}
+                        <div ref={messagesEndRef} />
                     </div>
                 )}
             </main>
@@ -605,11 +617,16 @@ function ChatContent() {
                     </div>
                 )}
                 <div className="input-container">
-                    <input
-                        type="text"
-                        placeholder="Scrivi a NUR..."
+                    <textarea
+                        ref={inputRef}
+                        placeholder="Scrivi a NUR... (Shift+Enter per andare a capo)"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => {
+                            setInput(e.target.value)
+                            // Auto-resize textarea
+                            e.target.style.height = 'auto'
+                            e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'
+                        }}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault()
@@ -617,6 +634,7 @@ function ChatContent() {
                             }
                         }}
                         disabled={status !== 'ready'}
+                        rows={1}
                     />
                     <button
                         className="send-btn"

@@ -1,7 +1,6 @@
 /**
  * NUR Streaming API Route
- * Endpoint per risposte in streaming (parola per parola)
- * Con accesso a Internet e salvataggio affidabile messaggi
+ * Con Tool Use per interagire con il sistema
  */
 
 import { NextRequest } from 'next/server'
@@ -9,9 +8,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
 import { generateNurPrompt } from '@/lib/nur/personality'
 import { buildFullUserContext, extractInsightsFromMessage, updateNurGrowthMetric } from '@/lib/nur/memory'
-import { createInsightEntry } from '@/lib/nur/journal'
 import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
-import { generateProgressSummary, detectGoalsFromMessage, processDetectedGoals } from '@/lib/nur/goals'
+import { generateProgressSummary } from '@/lib/nur/goals'
+import { NUR_TOOLS, handleToolCall } from '@/lib/nur/tools'
 
 export async function POST(req: NextRequest) {
     try {
@@ -30,7 +29,6 @@ export async function POST(req: NextRequest) {
         })
 
         // ====== 1. SALVA SUBITO IL MESSAGGIO UTENTE ======
-        // Questo risolve il bug dei messaggi che spariscono
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -48,7 +46,6 @@ export async function POST(req: NextRequest) {
             conversationId = conv?.id
         }
 
-        // Salva il messaggio utente IMMEDIATAMENTE
         if (conversationId) {
             await supabase.from('messages').insert({
                 conversation_id: conversationId,
@@ -58,7 +55,6 @@ export async function POST(req: NextRequest) {
                 area_type: area || 'generale'
             })
 
-            // Aggiorna updated_at della conversazione
             await supabase
                 .from('conversations')
                 .update({ updated_at: new Date().toISOString() })
@@ -76,8 +72,6 @@ export async function POST(req: NextRequest) {
 
         // ====== 3. CARICA CONTESTO E GENERA PROMPT ======
         const userContext = await buildFullUserContext(userId)
-
-        // Genera riepilogo progressi per NUR
         const progressSummary = await generateProgressSummary(userId)
 
         let systemPrompt = generateNurPrompt({
@@ -85,117 +79,159 @@ export async function POST(req: NextRequest) {
             current_area: area
         })
 
-        // Aggiungi istruzioni di formattazione
         systemPrompt += `
 
-IMPORTANTE - FORMATTAZIONE RISPOSTE:
-- Usa **grassetto** per enfatizzare parole importanti
-- Usa elenchi puntati con - quando elenchi cose
-- Usa elenchi numerati 1. 2. 3. per passi da seguire
-- Vai a capo spesso per rendere il testo leggibile
-- Usa > per citazioni o riflessioni importanti
-- NON usare troppi emoji, massimo 1-2 per messaggio
-- Mantieni i paragrafi brevi (2-3 frasi max)
+## I TUOI POTERI
 
-## PROGRESSI E OBIETTIVI DELL'UTENTE
+Hai accesso a TOOL per interagire con il sistema. USALI quando serve:
+
+- **add_task**: Aggiungi un task quando l'utente dice cosa vuole fare
+- **complete_task**: Segna completato quando l'utente dice di aver fatto qualcosa
+- **set_goal**: Imposta un obiettivo quando l'utente definisce dove vuole arrivare
+- **update_current_state**: Aggiorna la situazione attuale quando l'utente descrive come sta
+- **add_resource**: Aggiungi libri, film, articoli utili per la sua crescita
+- **update_progress**: Aggiorna la percentuale di progresso
+- **get_user_progress**: Ottieni un riepilogo dei suoi progressi
+
+USA I TOOL in modo naturale. Non chiedere conferma, agisci.
+Se l'utente dice "voglio smettere di fumare" → usa set_goal per salute + add_task per il primo step.
+
+## PROGRESSI ATTUALI
 
 ${progressSummary}
 
-Quando l'utente parla di obiettivi o di cosa vuole raggiungere:
-- Aiutalo a definire obiettivi chiari e misurabili
-- Suggerisci task concreti e realizzabili
-- Celebra i progressi fatti
-- Se vedi task completati, riconoscilo e incoraggialo`
+## FORMATTAZIONE
 
-        // Se ci sono risultati web, aggiungili al contesto
+- Usa **grassetto** per enfatizzare
+- Vai a capo spesso
+- Massimo 1-2 emoji per messaggio
+- Paragrafi brevi`
+
         if (webSearchResults) {
             systemPrompt += `
 
-## INFORMAZIONI DA INTERNET
+## INFO DA INTERNET
 
-Ho cercato su internet per te. Ecco cosa ho trovato:
-
-${webSearchResults}
-
-**USA QUESTE INFORMAZIONI** nella tua risposta quando rilevante. Cita le fonti se opportuno. Non limitarti a ripetere, elabora e personalizza per l'utente.`
+${webSearchResults}`
         }
 
-        // ====== 4. PREPARA MESSAGGI PER CLAUDE ======
-        const messages = [
+        // ====== 4. PREPARA MESSAGGI ======
+        const messages: Anthropic.MessageParam[] = [
             ...(history || []).map((m: any) => ({
                 role: m.role as 'user' | 'assistant',
                 content: m.content
             })),
-            { role: 'user' as const, content: message }
+            { role: 'user', content: message }
         ]
 
-        // ====== 5. CREA LO STREAM ======
-        const stream = await anthropic.messages.stream({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            system: systemPrompt,
-            messages
-        })
+        // ====== 5. LOOP CON TOOL USE ======
+        let finalResponse = ''
+        let toolResults: string[] = []
+        let continueLoop = true
+        let iterations = 0
+        const maxIterations = 5
 
-        const encoder = new TextEncoder()
-        let fullResponse = ''
+        while (continueLoop && iterations < maxIterations) {
+            iterations++
 
-        const readable = new ReadableStream({
-            async start(controller) {
-                try {
-                    for await (const event of stream) {
-                        if (event.type === 'content_block_delta') {
-                            const delta = event.delta as any
-                            if (delta.type === 'text_delta' && delta.text) {
-                                fullResponse += delta.text
-                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta.text })}\n\n`))
-                            }
-                        }
-                    }
+            const response = await anthropic.messages.create({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                system: systemPrompt,
+                tools: NUR_TOOLS as any,
+                messages
+            })
 
-                    // ====== 6. SALVA LA RISPOSTA E PROCESSA ======
-                    // Salva SUBITO la risposta di NUR
-                    if (conversationId && fullResponse) {
-                        await supabase.from('messages').insert({
-                            conversation_id: conversationId,
-                            clerk_user_id: userId,
-                            role: 'assistant',
-                            content: fullResponse,
-                            area_type: area || 'generale'
-                        })
+            // Processa i content blocks
+            for (const block of response.content) {
+                if (block.type === 'text') {
+                    finalResponse += block.text
+                } else if (block.type === 'tool_use') {
+                    // Esegui il tool
+                    const result = await handleToolCall(block.name, block.input, userId)
+                    toolResults.push(result.message)
+                    console.log(`[NUR Tool] ${block.name}: ${result.message}`)
 
-                        // Aggiorna conteggio messaggi
-                        const { data: conv } = await supabase
-                            .from('conversations')
-                            .select('message_count')
-                            .eq('id', conversationId)
-                            .single()
-
-                        await supabase
-                            .from('conversations')
-                            .update({
-                                message_count: (conv?.message_count || 0) + 2,
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq('id', conversationId)
-                    }
-
-                    // Processa insights in background (non blocca)
-                    processInsightsInBackground(userId, message, fullResponse, conversationId, area, history)
-
-                    // Invia nuovo conversationId se creato
-                    if (conversationId && !existingConvId) {
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
-                    }
-
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
-                    controller.close()
-
-                } catch (error) {
-                    console.error('Stream error:', error)
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'Errore durante lo streaming' })}\n\n`))
-                    controller.close()
+                    // Aggiungi il risultato ai messaggi per il prossimo turno
+                    messages.push({
+                        role: 'assistant',
+                        content: response.content
+                    })
+                    messages.push({
+                        role: 'user',
+                        content: [{
+                            type: 'tool_result',
+                            tool_use_id: block.id,
+                            content: result.message
+                        }]
+                    })
                 }
+            }
+
+            // Controlla se dobbiamo continuare
+            if (response.stop_reason === 'end_turn') {
+                continueLoop = false
+            } else if (response.stop_reason !== 'tool_use') {
+                continueLoop = false
+            }
+        }
+
+        // ====== 6. SALVA E RITORNA ======
+        if (conversationId && finalResponse) {
+            // Aggiungi nota sulle azioni eseguite
+            let responseWithActions = finalResponse
+            if (toolResults.length > 0) {
+                responseWithActions += `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
+            }
+
+            await supabase.from('messages').insert({
+                conversation_id: conversationId,
+                clerk_user_id: userId,
+                role: 'assistant',
+                content: responseWithActions,
+                area_type: area || 'generale'
+            })
+
+            const { data: conv } = await supabase
+                .from('conversations')
+                .select('message_count')
+                .eq('id', conversationId)
+                .single()
+
+            await supabase
+                .from('conversations')
+                .update({
+                    message_count: (conv?.message_count || 0) + 2,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', conversationId)
+        }
+
+        // Background processing
+        processInBackground(userId, message, finalResponse, conversationId, history)
+
+        // Streaming simulato (per compatibilità con il frontend)
+        const encoder = new TextEncoder()
+        const readable = new ReadableStream({
+            start(controller) {
+                // Invia tutto il testo
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: finalResponse })}\n\n`))
+
+                // Invia azioni se ce ne sono
+                if (toolResults.length > 0) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                        actions: toolResults,
+                        text: `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
+                    })}\n\n`))
+                }
+
+                // Invia conversationId se nuovo
+                if (conversationId && !existingConvId) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
+                }
+
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
+                controller.close()
             }
         })
 
@@ -216,26 +252,14 @@ ${webSearchResults}
     }
 }
 
-/**
- * Processa insights in background senza bloccare la risposta
- */
-async function processInsightsInBackground(
+async function processInBackground(
     userId: string,
     userMessage: string,
     nurResponse: string,
     conversationId?: string,
-    area?: string,
     history?: any[]
 ) {
     try {
-        // ====== RILEVA OBIETTIVI DAL MESSAGGIO ======
-        const goalDetection = await detectGoalsFromMessage(userMessage, history || [])
-        if (goalDetection.detected_goals.length > 0 || goalDetection.update_current_state.length > 0) {
-            const result = await processDetectedGoals(userId, goalDetection)
-            console.log(`[Goals] Created: ${result.goalsCreated} goals, ${result.tasksCreated} tasks, ${result.statesUpdated} states`)
-        }
-
-        // Estrai insights
         const insights = await extractInsightsFromMessage(
             userMessage,
             history || [],
@@ -243,56 +267,10 @@ async function processInsightsInBackground(
             conversationId
         )
 
-        // Salva insight importanti nel giornale
-        for (const insight of insights) {
-            if (insight.importance >= 7) {
-                await createInsightEntry(
-                    userId,
-                    insight.type,
-                    insight.content,
-                    undefined,
-                    insight.area,
-                    insight.importance
-                )
-            }
-        }
-
-        // Aggiorna metriche
         await updateNurGrowthMetric('conversations_total', 1)
         if (insights.length > 0) {
             await updateNurGrowthMetric('insights_generated', insights.length)
         }
-
-        // Estrai e salva soluzioni se presenti
-        const solutionIndicators = ['ecco cosa puoi fare', 'ti propongo', 'primo step', 'inizia con', 'ecco un piano']
-        if (solutionIndicators.some(ind => nurResponse.toLowerCase().includes(ind))) {
-            const lines = nurResponse.split('\n').filter(l => l.trim())
-            const steps: string[] = []
-
-            for (const line of lines) {
-                if (/^[\d]+[\.\)]|\s*[-•]\s/.test(line.trim())) {
-                    const cleanStep = line.replace(/^[\d]+[\.\)]\s*|\s*[-•]\s*/, '').trim()
-                    if (cleanStep.length > 10) {
-                        steps.push(cleanStep)
-                    }
-                }
-            }
-
-            if (steps.length >= 2) {
-                const title = lines[0].substring(0, 60).replace(/[^a-zA-Z0-9àèéìòù\s]/gi, '').trim() || 'Piano suggerito da NUR'
-                await supabase.from('solutions').insert({
-                    clerk_user_id: userId,
-                    conversation_id: conversationId,
-                    title,
-                    description: nurResponse.substring(0, 200),
-                    steps,
-                    status: 'proposta',
-                    area_type: area || 'generale',
-                    progress: 0
-                })
-            }
-        }
-
     } catch (error) {
         console.error('Background processing error:', error)
     }

@@ -493,7 +493,7 @@
     box-shadow: 0 0 20px rgba(132, 94, 247, 0.15);
 }
 
-.input-container input {
+.input-container textarea {
     flex: 1;
     background: transparent;
     border: none;
@@ -501,10 +501,29 @@
     font-size: 15px;
     padding: 10px 12px;
     outline: none;
+    resize: none;
+    font-family: inherit;
+    line-height: 1.5;
+    min-height: 44px;
+    max-height: 150px;
+    overflow-y: auto;
 }
 
-.input-container input::placeholder {
+.input-container textarea::placeholder {
     color: var(--text-muted);
+}
+
+.input-container textarea::-webkit-scrollbar {
+    width: 4px;
+}
+
+.input-container textarea::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.input-container textarea::-webkit-scrollbar-thumb {
+    background: rgba(132, 94, 247, 0.3);
+    border-radius: 4px;
 }
 
 .send-btn {
