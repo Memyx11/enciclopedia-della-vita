@@ -176,45 +176,68 @@ ${webSearchResults}`
         while (continueLoop && iterations < maxIterations) {
             iterations++
 
-            const response = await anthropic.messages.create({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                system: systemPrompt,
-                tools: NUR_TOOLS as any,
-                messages
-            })
+            try {
+                const response = await anthropic.messages.create({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 1500,
+                    system: systemPrompt,
+                    tools: NUR_TOOLS as any,
+                    messages
+                })
 
-            // Controlla se ci sono tool da eseguire
-            const hasToolUse = response.content.some(block => block.type === 'tool_use')
+                // Controlla se ci sono tool da eseguire
+                const toolUseBlocks = response.content.filter(block => block.type === 'tool_use')
 
-            if (hasToolUse) {
-                // Esegui tutti i tool
-                for (const block of response.content) {
-                    if (block.type === 'tool_use') {
-                        const result = await handleToolCall(block.name, block.input, userId)
-                        toolResults.push(result.message)
-                        console.log(`[NUR Tool] ${block.name}: ${result.message}`)
+                if (toolUseBlocks.length > 0) {
+                    // Prima aggiungi la risposta assistant (una sola volta!)
+                    messages.push({
+                        role: 'assistant',
+                        content: response.content
+                    })
 
-                        messages.push({
-                            role: 'assistant',
-                            content: response.content
-                        })
-                        messages.push({
-                            role: 'user',
-                            content: [{
-                                type: 'tool_result',
-                                tool_use_id: block.id,
-                                content: result.message
-                            }]
-                        })
+                    // Poi esegui tutti i tool e raccogli i risultati
+                    const toolResultsContent: any[] = []
+
+                    for (const block of toolUseBlocks) {
+                        if (block.type === 'tool_use') {
+                            try {
+                                const result = await handleToolCall(block.name, block.input, userId)
+                                toolResults.push(result.message)
+                                console.log(`[NUR Tool] ${block.name}: ${result.message}`)
+
+                                toolResultsContent.push({
+                                    type: 'tool_result',
+                                    tool_use_id: block.id,
+                                    content: result.message
+                                })
+                            } catch (toolError: any) {
+                                console.error(`[NUR Tool Error] ${block.name}:`, toolError.message)
+                                toolResultsContent.push({
+                                    type: 'tool_result',
+                                    tool_use_id: block.id,
+                                    content: `Errore: ${toolError.message}`,
+                                    is_error: true
+                                })
+                            }
+                        }
                     }
-                }
-            } else {
-                // Nessun tool, esci dal loop
-                continueLoop = false
-            }
 
-            if (response.stop_reason === 'end_turn') {
+                    // Aggiungi tutti i risultati in un unico messaggio user
+                    messages.push({
+                        role: 'user',
+                        content: toolResultsContent
+                    })
+                } else {
+                    // Nessun tool, esci dal loop
+                    continueLoop = false
+                }
+
+                if (response.stop_reason === 'end_turn') {
+                    continueLoop = false
+                }
+            } catch (apiError: any) {
+                console.error('[NUR API Error]:', apiError.message)
+                // Se c'è un errore API, esci dal loop e prova a rispondere comunque
                 continueLoop = false
             }
         }
