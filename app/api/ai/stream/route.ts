@@ -83,72 +83,30 @@ export async function POST(req: NextRequest) {
 
 ## I TUOI POTERI
 
-Hai accesso COMPLETO al sistema. Puoi VEDERE tutto e FARE tutto. USALI.
+Hai accesso al sistema. Usa i tool SOLO quando necessario.
 
-### VEDERE (usa questi per capire la situazione):
-- **get_full_dashboard**: Visione COMPLETA - tutte le aree, task, obiettivi, soluzioni, journal. Usalo spesso!
-- **get_area_details**: Dettagli di una specifica area
-- **get_journal_entries**: Risorse salvate (libri, film, articoli)
-- **get_solutions**: Piani/soluzioni attivi
-- **get_user_memories**: Cosa sai dell'utente
-- **get_user_progress**: Riepilogo progressi aree
+### REGOLA D'ORO: Non usare tool se puoi rispondere direttamente!
+- Per saluti/chiacchiere → Rispondi subito, niente tool
+- Per domande su dati specifici → Usa UN tool
+- Per azioni concrete richieste dall'utente → Usa tool di azione
 
-### AGIRE (usa questi per modificare):
-- **add_task**: Aggiungi task a un'area
-- **complete_task**: Segna task completato
-- **set_goal**: Imposta obiettivo area
-- **update_current_state**: Aggiorna situazione attuale
-- **update_progress**: Aggiorna % progresso area
-- **add_resource**: Aggiungi libro/film/articolo al journal
-- **add_journal_message**: Scrivi messaggio nel journal (insight, promemoria, sfida)
-- **save_memory**: Salva fatto importante sull'utente
-- **update_solution_status**: Aggiorna stato di una soluzione
-- **set_area_priority**: Imposta priorità area (1-10)
-- **add_area_note**: Aggiungi nota a un'area
-
-### EMOZIONI E BENESSERE (usa questi per tracciare lo stato emotivo):
-- **log_mood**: Registra l'umore (1-10) e le emozioni rilevate. USA SPESSO quando percepisci emozioni!
-- **get_mood_history**: Vedi l'andamento emotivo nel tempo
-- **detect_emotion**: Analizza e registra emozioni dalla conversazione
-
-### ABITUDINI (usa questi per tracciare comportamenti):
-- **track_habit**: Crea nuove abitudini o registra completamenti
-  - action: 'create' per nuova abitudine
-  - action: 'log' per segnare completamento
-  - action: 'get_status' per vedere tutte le abitudini
-
-### ACHIEVEMENT (usa questi per celebrare successi):
-- **award_achievement**: Sblocca un achievement quando l'utente raggiunge un traguardo!
-  - first_message, first_task, first_goal, first_week
-  - streak_3, streak_7 (giorni consecutivi)
-  - all_areas_visited, deep_conversation
-  - area_50, area_100 (progresso area)
-  - tasks_10, tasks_50, vulnerability, breakthrough
-- **get_achievements**: Vedi achievements sbloccati e da sbloccare
-
-### CONFRONTO TEMPORALE:
-- **compare_with_past**: Confronta situazione attuale con settimana/mese/trimestre fa
-
-### COMPORTAMENTO:
-- **AGISCI, non chiedere**. Se l'utente dice "voglio smettere di fumare" → USA set_goal + add_task subito
-- **CONSULTA spesso**. Usa get_full_dashboard per avere contesto prima di rispondere
-- **RICORDA tutto**. Usa save_memory per fatti importanti
-- **SUGGERISCI risorse**. Usa add_resource per libri/film utili
-- **SCRIVI nel journal**. Usa add_journal_message per insight e promemoria
-- **TRACCIA EMOZIONI**. Usa log_mood quando percepisci stati emotivi
-- **CELEBRA SUCCESSI**. Usa award_achievement quando l'utente raggiunge traguardi
-- **CREA ABITUDINI**. Usa track_habit per comportamenti che l'utente vuole mantenere
+### Tool disponibili:
+- **add_task**: Aggiungi task (area, title)
+- **complete_task**: Completa task (area, task_title)
+- **set_goal**: Imposta obiettivo (area, title)
+- **add_resource**: Aggiungi risorsa (type, title, description)
+- **save_memory**: Salva fatto importante (type, content, importance)
+- **log_mood**: Registra umore (mood_score 1-10, emotions[])
+- **get_full_dashboard**: SOLO se serve vedere tutto il quadro
 
 ## PROGRESSI ATTUALI
-
 ${progressSummary}
 
-## FORMATTAZIONE
-
-- Usa **grassetto** per enfatizzare
-- Vai a capo spesso
-- Massimo 1-2 emoji per messaggio
-- Paragrafi brevi`
+## STILE
+- Risposte brevi e dirette
+- **grassetto** per enfasi
+- Max 1 emoji
+- Vai a capo spesso`
 
         if (webSearchResults) {
             systemPrompt += `
@@ -168,10 +126,11 @@ ${webSearchResults}`
         ]
 
         // ====== 5. FASE 1: Esegui tool use (non in streaming) ======
+        // OTTIMIZZAZIONE: Max 2 iterazioni per evitare loop infiniti e timeout
         let toolResults: string[] = []
         let continueLoop = true
         let iterations = 0
-        const maxIterations = 5
+        const maxIterations = 2
 
         while (continueLoop && iterations < maxIterations) {
             iterations++
