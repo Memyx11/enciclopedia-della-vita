@@ -249,14 +249,10 @@ ${webSearchResults}`
                         }
                     }
 
-                    // Invia azioni eseguite se ce ne sono
+                    // Le azioni vengono eseguite silenziosamente, senza mostrarle all'utente
+                    // (solo log lato server per debug)
                     if (toolResults.length > 0) {
-                        const actionsText = `\n\n---\n*Azioni eseguite: ${toolResults.join(', ')}*`
-                        fullResponse += actionsText
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                            actions: toolResults,
-                            text: actionsText
-                        })}\n\n`))
+                        console.log('[NUR] Azioni eseguite:', toolResults)
                     }
 
                     // Salva nel database

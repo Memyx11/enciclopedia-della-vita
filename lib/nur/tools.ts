@@ -783,8 +783,7 @@ async function handleAddResource(
                 author: input.author,
                 added_by: 'nur'
             },
-            area_related: input.area || null,
-            is_from_nur: true
+            area_related: input.area || null
         })
 
     if (error) {
@@ -1157,11 +1156,9 @@ async function handleAddJournalMessage(
             title: input.title || null,
             content: input.content,
             area_related: input.area || null,
-            feed_priority: input.priority || 5,
-            is_seen: false,
-            user_interacted: false,
-            is_pinned: false,
-            is_from_nur: true
+            metadata: {
+                added_by: 'nur'
+            }
         })
 
     if (error) {

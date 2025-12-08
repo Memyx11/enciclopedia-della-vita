@@ -461,33 +461,6 @@ function ChatContent() {
         }
     }
 
-    const saveSolution = async (content: string, index: number) => {
-        if (!user) return
-
-        const lines = content.split('\n').filter(r => r.trim())
-        const title = lines[0] ? lines[0].substring(0, 80).replace(/[^a-zA-Z0-9àèéìòù\s]/gi, '').trim() : 'Piano'
-        const steps = lines.filter(r => /^[\d\-\•]/.test(r.trim())).map(r => r.replace(/^[\d\-\•]+\.?\s*/, '').trim())
-
-        const solution = {
-            clerk_user_id: user.id,
-            conversation_id: conversationId,
-            title: title || 'Piano suggerito da NUR',
-            description: content.substring(0, 200),
-            steps: steps.length > 0 ? steps : [content],
-            status: 'proposta',
-            area_type: currentArea || 'generale',
-            progress: 0
-        }
-
-        const { error } = await supabase.from('solutions').insert([solution])
-
-        if (!error) {
-            setMessages(prev => prev.map((msg, i) =>
-                i === index ? { ...msg, saved: true } : msg
-            ))
-        }
-    }
-
     if (!isLoaded) return null
 
     if (!user) {
@@ -610,22 +583,6 @@ function ChatContent() {
                                             )}
                                         </div>
                                     )}
-                                    {msg.role === 'assistant' && !msg.isStreaming && (
-                                        <div className="message-actions">
-                                            {!msg.saved ? (
-                                                <button
-                                                    className="action-btn"
-                                                    onClick={() => saveSolution(msg.content, i)}
-                                                >
-                                                    💾 Salva piano
-                                                </button>
-                                            ) : (
-                                                <Link href="/soluzioni" className="action-btn saved">
-                                                    ✅ Salvato
-                                                </Link>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
                                 {msg.role === 'user' && (
                                     <div className="message-avatar user">
@@ -634,6 +591,19 @@ function ChatContent() {
                                 )}
                             </div>
                         ))}
+                        {/* Indicatore di thinking - mostrato mentre NUR pensa */}
+                        {status === 'thinking' && (
+                            <div className="message assistant">
+                                <div className="message-avatar">💜</div>
+                                <div className="message-content">
+                                    <div className="message-bubble typing">
+                                        <span className="typing-dot"></span>
+                                        <span className="typing-dot"></span>
+                                        <span className="typing-dot"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {/* Elemento invisibile per scroll */}
                         <div ref={messagesEndRef} />
                     </div>
