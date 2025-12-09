@@ -34,7 +34,11 @@ const entryTypeConfig: Record<string, { emoji: string; label: string; color: str
     'achievement': { emoji: '🏆', label: 'Traguardo', color: '#51cf66' },
     'article': { emoji: '📖', label: 'Articolo', color: '#868e96' },
     'progress_update': { emoji: '📈', label: 'Progressi', color: '#22b8cf' },
-    'insight': { emoji: '💡', label: 'Insight', color: '#fab005' }
+    'insight': { emoji: '💡', label: 'Insight', color: '#fab005' },
+    // Nuovi tipi per materiale completo
+    'guide': { emoji: '📋', label: 'Guida', color: '#12b886' },
+    'exercise': { emoji: '💪', label: 'Esercizio', color: '#fa5252' },
+    'plan': { emoji: '🗺️', label: 'Piano', color: '#7950f2' }
 }
 
 const areaEmojis: Record<string, string> = {
@@ -54,7 +58,7 @@ export default function ScrivaniaNURPage() {
     const { user, isLoaded } = useUser()
     const [entries, setEntries] = useState<JournalEntry[]>([])
     const [loading, setLoading] = useState(true)
-    const [filter, setFilter] = useState<'all' | 'resources' | 'messages' | 'pinned'>('all')
+    const [filter, setFilter] = useState<'all' | 'resources' | 'messages' | 'material' | 'pinned'>('all')
 
     const fetchEntries = useCallback(async () => {
         if (!user) return
@@ -85,6 +89,10 @@ export default function ScrivaniaNURPage() {
             } else if (filter === 'messages') {
                 filtered = filtered.filter(e =>
                     ['nur_message', 'reminder', 'reflection_prompt', 'challenge', 'suggestion'].includes(e.entry_type)
+                )
+            } else if (filter === 'material') {
+                filtered = filtered.filter(e =>
+                    ['guide', 'exercise', 'plan'].includes(e.entry_type) || e.metadata?.is_material
                 )
             } else if (filter === 'pinned') {
                 filtered = filtered.filter(e => e.is_pinned)
@@ -231,16 +239,16 @@ export default function ScrivaniaNURPage() {
                         Tutto
                     </button>
                     <button
+                        className={`filter-tab ${filter === 'material' ? 'active' : ''}`}
+                        onClick={() => setFilter('material')}
+                    >
+                        📋 Guide
+                    </button>
+                    <button
                         className={`filter-tab ${filter === 'messages' ? 'active' : ''}`}
                         onClick={() => setFilter('messages')}
                     >
-                        💬 Messaggi
-                    </button>
-                    <button
-                        className={`filter-tab ${filter === 'resources' ? 'active' : ''}`}
-                        onClick={() => setFilter('resources')}
-                    >
-                        📚 Risorse
+                        💬 Msg
                     </button>
                     <button
                         className={`filter-tab ${filter === 'pinned' ? 'active' : ''}`}
@@ -305,7 +313,11 @@ export default function ScrivaniaNURPage() {
                                         <h3 className="entry-title">{entry.title}</h3>
                                     )}
 
-                                    <p className="entry-content">{entry.content}</p>
+                                    <div className={`entry-content ${entry.content.length > 200 ? 'expandable' : ''}`}>
+                                        {entry.content.split('\n').map((line, i) => (
+                                            <p key={i}>{line}</p>
+                                        ))}
+                                    </div>
 
                                     {entry.area_related && (
                                         <div className="entry-area">

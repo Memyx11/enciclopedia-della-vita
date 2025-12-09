@@ -34,8 +34,10 @@ Quando l'utente chiede di fare qualcosa, aggiungi il comando alla fine:
 [GOAL:area|obiettivo] - per impostare obiettivo
 [MEMORY:tipo|contenuto] - per salvare info importante (tipi: fact,preference,struggle)
 [MOOD:score|emozione] - per registrare umore (score 1-10)
+[SAVE:tipo|titolo|contenuto] - per salvare materiale nella Scrivania (tipi: guide,article,exercise,resource)
 
-Esempio: "Ok ti aggiungo la task! [TASK:salute|Camminare 30 minuti]"
+Esempio task: "Ok ti aggiungo! [TASK:salute|Camminare 30 minuti]"
+Esempio materiale: "Ecco la guida! [SAVE:guide|Come smettere di fumare|Passo 1: Identifica i trigger...]"
 
 ## CONTESTO UTENTE
 {USER_CONTEXT}
@@ -205,6 +207,26 @@ async function executeActions(text: string, userId: string): Promise<void> {
             console.error('[NUR Action Error] Mood:', e)
         }
     }
+
+    // Parse [SAVE:tipo|titolo|contenuto] - per salvare materiale nella Scrivania
+    const saveMatch = text.match(/\[SAVE:(\w+)\|([^|]+)\|([^\]]+)\]/)
+    if (saveMatch) {
+        const [, type, title, content] = saveMatch
+        try {
+            await supabase
+                .from('journal_entries')
+                .insert({
+                    clerk_user_id: userId,
+                    entry_type: type, // guide, article, exercise, resource
+                    title: title.trim(),
+                    content: content.trim(),
+                    metadata: { added_by: 'nur', is_material: true }
+                })
+            console.log(`[NUR Action] Materiale salvato: ${title}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Save:', e)
+        }
+    }
 }
 
 // ============================================
@@ -217,6 +239,7 @@ function cleanResponse(text: string): string {
         .replace(/\[GOAL:[^\]]+\]/g, '')
         .replace(/\[MEMORY:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
+        .replace(/\[SAVE:[^\]]+\]/g, '')
         .trim()
 }
 
@@ -313,11 +336,26 @@ export async function POST(req: NextRequest) {
                                     .replace(/\[GOAL:[^\]]*\]?/g, '')
                                     .replace(/\[MEMORY:[^\]]*\]?/g, '')
                                     .replace(/\[MOOD:[^\]]*\]?/g, '')
+                                    .replace(/\[SAVE:[^\]]*\]?/g, '')
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                                 }
                             }
                         }
+                        // Log usage quando arriva
+                        if (event.type === 'message_delta' && (event as any).usage) {
+                            const usage = (event as any).usage
+                            console.log(`[NUR COST] Output tokens: ${usage.output_tokens}`)
+                        }
+                    }
+
+                    // Log finale per monitoraggio costi
+                    const finalMessage = await stream.finalMessage()
+                    if (finalMessage.usage) {
+                        const inputCost = (finalMessage.usage.input_tokens * 0.001) / 1000  // $0.001 per 1K
+                        const outputCost = (finalMessage.usage.output_tokens * 0.005) / 1000  // $0.005 per 1K
+                        const totalCost = inputCost + outputCost
+                        console.log(`[NUR COST] Model: claude-3-5-haiku | Input: ${finalMessage.usage.input_tokens} | Output: ${finalMessage.usage.output_tokens} | Cost: $${totalCost.toFixed(6)}`)
                     }
 
                     // ====== 5. ESEGUI AZIONI (dopo streaming) ======
