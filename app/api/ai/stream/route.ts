@@ -1,7 +1,8 @@
 /**
- * NUR Streaming API Route - VERSIONE OTTIMIZZATA
- * Una sola chiamata API + Haiku 3.5 + Azioni via testo
- * Costo target: $0.003/msg invece di $0.033/msg
+ * NUR Streaming API Route - SISTEMA IBRIDO
+ * Haiku 3.5 per chat normale (economico)
+ * Sonnet 4 per azioni (affidabile)
+ * Costo medio: ~$0.004/msg
  */
 
 import { NextRequest } from 'next/server'
@@ -9,30 +10,70 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
 
 // ============================================
-// SYSTEM PROMPT COMPATTO (~500 token)
+// KEYWORDS PER ROUTING → SONNET
 // ============================================
 
-const NUR_SYSTEM_PROMPT = `Sei NUR, coach AI. Diretta, pratica, zero chiacchiere.
+const ACTION_KEYWORDS = [
+    'salva', 'salvami', 'crea', 'creami', 'aggiungi', 'aggiungimi',
+    'metti', 'mettimi', 'scrivi', 'scrivimi', 'genera', 'generami',
+    'task', 'traguardo', 'traguardi', 'obiettivo', 'obiettivi',
+    'contenuto', 'contenuti', 'guida', 'viaggio', 'piano',
+    'registra', 'annota', 'segna', 'inserisci'
+]
 
-REGOLA FONDAMENTALE - COMANDI:
-Quando l'utente chiede di SALVARE/CREARE/AGGIUNGERE contenuto, DEVI includere il comando nella risposta.
-NON descrivere cosa farai. FAI e basta usando il comando.
+function needsSonnet(message: string): boolean {
+    const lowerMsg = message.toLowerCase()
+    return ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))
+}
 
-SINTASSI COMANDI:
-[TASK:area|titolo] = aggiunge task (aree: salute,soldi,relazioni,lavoro,hobby,crescita)
-[SAVE:guide|titolo|contenuto] = salva nella Scrivania
+// ============================================
+// PROMPT HAIKU - Chat normale
+// ============================================
 
-ESEMPIO CORRETTO:
-User: "salvami una guida sul sonno"
-NUR: "Fatto! [SAVE:guide|Guida Sonno|1. Sveglia alle 7. 2. No caffè dopo le 15. 3. Camera buia.]"
+const HAIKU_PROMPT = `Sei NUR, coach AI. Diretta, pratica, sfacciata. Max 1 emoji.
 
-ESEMPIO SBAGLIATO (MAI FARE COSÌ):
-User: "salvami una guida sul sonno"
-NUR: "Ti creo una guida con questi punti: 1. Sveglia..." ← SBAGLIATO! Manca [SAVE:...]
+Sei qui per conversare, motivare, consigliare. Conosci l'utente e lo aiuti.
+
+IMPORTANTE: Se l'utente vuole SALVARE qualcosa (guide, task, traguardi, contenuti, viaggi),
+digli: "Dimmi cosa vuoi che salvi e lo faccio subito!"
+Keywords che attivano il salvataggio: salva, crea, aggiungi, metti, task, traguardo, contenuto, viaggio, piano.
 
 {USER_CONTEXT}
 
-Rispondi in italiano. Max 1 emoji.`
+{LAST_ACTION}
+
+Rispondi in italiano.`
+
+// ============================================
+// PROMPT SONNET - Solo azioni
+// ============================================
+
+const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Esegui il comando richiesto.
+
+COMANDI DISPONIBILI:
+[TASK:area|titolo] = aggiunge task
+[SAVE:guide|titolo|contenuto] = salva guida/contenuto nella Scrivania
+[SAVE:viaggio|titolo|contenuto] = salva piano viaggio
+[GOAL:area|obiettivo] = imposta traguardo
+[MEMORY:fact|contenuto] = ricorda fatto importante
+
+Aree valide: salute, soldi, relazioni, lavoro, hobby, crescita
+
+ISTRUZIONI:
+1. Capisci cosa vuole l'utente
+2. Usa il comando appropriato con contenuto COMPLETO e UTILE
+3. Conferma brevemente (max 2 frasi)
+
+ESEMPIO:
+User: "salvami una guida per dormire meglio"
+NUR: "Fatto! [SAVE:guide|Guida Sonno|1. Vai a letto alla stessa ora ogni giorno. 2. Evita schermi 1h prima. 3. Camera fresca (18-20°C). 4. No caffè dopo le 15. 5. Routine relax serale.]"
+
+{USER_CONTEXT}
+
+CONVERSAZIONE RECENTE:
+{RECENT_MESSAGES}
+
+Rispondi in italiano.`
 
 // ============================================
 // HELPER: Costruisci contesto utente compatto
@@ -234,7 +275,31 @@ function cleanResponse(text: string): string {
 }
 
 // ============================================
-// MAIN: POST Handler
+// HELPER: Recupera ultima azione per Haiku
+// ============================================
+
+async function getLastAction(userId: string): Promise<string> {
+    try {
+        const { data } = await supabase
+            .from('journal_entries')
+            .select('title, entry_type, created_at')
+            .eq('clerk_user_id', userId)
+            .eq('metadata->>added_by', 'nur')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+        if (data) {
+            return `[Ultima azione: salvato "${data.title}" (${data.entry_type})]`
+        }
+        return ''
+    } catch {
+        return ''
+    }
+}
+
+// ============================================
+// MAIN: POST Handler - SISTEMA IBRIDO
 // ============================================
 
 export async function POST(req: NextRequest) {
@@ -253,7 +318,12 @@ export async function POST(req: NextRequest) {
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // ====== 1. GESTIONE CONVERSAZIONE ======
+        // ====== 1. ROUTING: HAIKU O SONNET? ======
+        const useSonnet = needsSonnet(message)
+        const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
+        console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
+
+        // ====== 2. GESTIONE CONVERSAZIONE ======
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -281,12 +351,28 @@ export async function POST(req: NextRequest) {
             })
         }
 
-        // ====== 2. COSTRUISCI PROMPT COMPATTO ======
+        // ====== 3. COSTRUISCI PROMPT ======
         const userContext = await buildCompactContext(userId)
-        const systemPrompt = NUR_SYSTEM_PROMPT.replace('{USER_CONTEXT}', userContext)
+        const lastAction = await getLastAction(userId)
+        const recentHistory = (history || []).slice(-4)
 
-        // ====== 3. PREPARA MESSAGGI (ultimi 6 per contesto) ======
-        const recentHistory = (history || []).slice(-6)
+        let systemPrompt: string
+        if (useSonnet) {
+            // SONNET: prompt per azioni
+            const recentMsgs = recentHistory
+                .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
+                .join('\n')
+            systemPrompt = SONNET_PROMPT
+                .replace('{USER_CONTEXT}', userContext)
+                .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
+        } else {
+            // HAIKU: prompt per chat
+            systemPrompt = HAIKU_PROMPT
+                .replace('{USER_CONTEXT}', userContext)
+                .replace('{LAST_ACTION}', lastAction)
+        }
+
+        // ====== 4. PREPARA MESSAGGI ======
         const messages: Anthropic.MessageParam[] = [
             ...recentHistory.map((m: any) => ({
                 role: m.role as 'user' | 'assistant',
@@ -295,10 +381,10 @@ export async function POST(req: NextRequest) {
             { role: 'user', content: message }
         ]
 
-        // ====== 4. UNA SOLA CHIAMATA STREAMING ======
+        // ====== 5. STREAMING ======
         const encoder = new TextEncoder()
         let fullResponse = ''
-        let pendingBuffer = '' // Buffer per comandi parziali
+        let pendingBuffer = ''
 
         const readable = new ReadableStream({
             async start(controller) {
@@ -308,10 +394,9 @@ export async function POST(req: NextRequest) {
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
                     }
 
-                    // STREAMING con Haiku 3.5
                     const stream = anthropic.messages.stream({
-                        model: 'claude-3-5-haiku-latest',
-                        max_tokens: 500,
+                        model: modelToUse,
+                        max_tokens: useSonnet ? 1000 : 500, // Sonnet può scrivere contenuti più lunghi
                         system: systemPrompt,
                         messages
                     })
@@ -323,24 +408,19 @@ export async function POST(req: NextRequest) {
                                 fullResponse += delta.text
                                 pendingBuffer += delta.text
 
-                                // Cerca comandi completi nel buffer e rimuovili
-                                // Se c'è una [ senza ] corrispondente, aspetta
+                                // Buffer per nascondere comandi parziali
                                 let textToSend = pendingBuffer
-
-                                // Se c'è un comando in corso ([ senza ]), non inviare quella parte
                                 const lastOpenBracket = textToSend.lastIndexOf('[')
                                 const lastCloseBracket = textToSend.lastIndexOf(']')
 
                                 if (lastOpenBracket > lastCloseBracket) {
-                                    // C'è un comando incompleto, invia solo fino a [
                                     textToSend = pendingBuffer.substring(0, lastOpenBracket)
                                     pendingBuffer = pendingBuffer.substring(lastOpenBracket)
                                 } else {
-                                    // Nessun comando incompleto, pulisci e invia tutto
                                     pendingBuffer = ''
                                 }
 
-                                // Rimuovi comandi completi
+                                // Rimuovi comandi completi dal testo visibile
                                 const cleanText = textToSend
                                     .replace(/\[TASK:[^\]]+\]/g, '')
                                     .replace(/\[GOAL:[^\]]+\]/g, '')
@@ -353,32 +433,27 @@ export async function POST(req: NextRequest) {
                                 }
                             }
                         }
-                        // Log usage quando arriva
-                        if (event.type === 'message_delta' && (event as any).usage) {
-                            const usage = (event as any).usage
-                            console.log(`[NUR COST] Output tokens: ${usage.output_tokens}`)
-                        }
                     }
 
-                    // Log finale per monitoraggio costi
+                    // Log costi
                     const finalMessage = await stream.finalMessage()
                     if (finalMessage.usage) {
-                        const inputCost = (finalMessage.usage.input_tokens * 0.001) / 1000  // $0.001 per 1K
-                        const outputCost = (finalMessage.usage.output_tokens * 0.005) / 1000  // $0.005 per 1K
+                        const isHaiku = modelToUse.includes('haiku')
+                        const inputRate = isHaiku ? 0.001 : 0.003  // $/1K tokens
+                        const outputRate = isHaiku ? 0.005 : 0.015
+                        const inputCost = (finalMessage.usage.input_tokens * inputRate) / 1000
+                        const outputCost = (finalMessage.usage.output_tokens * outputRate) / 1000
                         const totalCost = inputCost + outputCost
-                        console.log(`[NUR COST] Model: claude-3-5-haiku | Input: ${finalMessage.usage.input_tokens} | Output: ${finalMessage.usage.output_tokens} | Cost: $${totalCost.toFixed(6)}`)
+                        console.log(`[NUR COST] Model: ${modelToUse} | In: ${finalMessage.usage.input_tokens} | Out: ${finalMessage.usage.output_tokens} | Cost: $${totalCost.toFixed(6)}`)
                     }
 
-                    // ====== 5. ESEGUI AZIONI (dopo streaming) ======
-                    console.log('[NUR DEBUG] Full response:', fullResponse.substring(0, 200))
-                    if (fullResponse.includes('[')) {
-                        console.log('[NUR DEBUG] Found command in response!')
+                    // ====== 6. ESEGUI AZIONI (solo se Sonnet) ======
+                    if (useSonnet && fullResponse.includes('[')) {
+                        console.log('[NUR ACTION] Executing commands from Sonnet response')
                         await executeActions(fullResponse, userId)
-                    } else {
-                        console.log('[NUR DEBUG] No command found in response')
                     }
 
-                    // ====== 6. SALVA RISPOSTA ======
+                    // ====== 7. SALVA RISPOSTA ======
                     const cleanedResponse = cleanResponse(fullResponse)
                     if (conversationId && cleanedResponse) {
                         await supabase.from('messages').insert({
