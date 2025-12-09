@@ -96,7 +96,7 @@ export default function ScrivaniaNURPage() {
                 )
             } else if (filter === 'material') {
                 filtered = filtered.filter(e =>
-                    ['guide', 'exercise', 'plan'].includes(e.entry_type) || e.metadata?.is_material
+                    ['guide', 'exercise', 'plan', 'suggestion'].includes(e.entry_type) || e.metadata?.is_material
                 )
             } else if (filter === 'pinned') {
                 filtered = filtered.filter(e => e.is_pinned)
