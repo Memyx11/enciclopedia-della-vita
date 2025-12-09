@@ -79,6 +79,9 @@ export default function ScrivaniaNURPage() {
                 return
             }
 
+            console.log('[GIORNALE DEBUG] Raw data from DB:', data?.length, 'entries')
+            console.log('[GIORNALE DEBUG] Entry types:', data?.map(e => e.entry_type))
+
             let filtered = data || []
 
             // Applica filtri
