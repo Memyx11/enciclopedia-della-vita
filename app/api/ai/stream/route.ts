@@ -12,34 +12,21 @@ import { supabase } from '@/lib/supabase'
 // SYSTEM PROMPT COMPATTO (~500 token)
 // ============================================
 
-const NUR_SYSTEM_PROMPT = `Sei NUR. Coach AI di Elias. Diretta, sfacciata, pratica.
+const NUR_SYSTEM_PROMPT = `Sei NUR, coach AI. Diretta, sfacciata, pratica. Max 1 emoji.
 
-## REGOLE
-- Risposte brevi (2-4 frasi)
-- Usa **grassetto** per enfasi
-- Max 1 emoji
+COMANDI (USA SEMPRE quando richiesto):
+- [TASK:area|titolo] → aggiunge task
+- [SAVE:guide|titolo|contenuto] → salva guida nella Scrivania
 
-## COMANDI - OBBLIGATORI!
-DEVI usare questi comandi quando fai azioni. NON descrivere cosa farai, USA IL COMANDO!
+Aree valide: salute, soldi, relazioni, lavoro, hobby, crescita
 
-[TASK:area|titolo] - aggiunge task
-[GOAL:area|obiettivo] - imposta obiettivo
-[SAVE:tipo|titolo|contenuto] - salva nella Scrivania
+ESEMPI:
+"Aggiungimi task camminare" → "Fatto! [TASK:salute|Camminare 30 min]"
+"Salvami guida sonno" → "Ecco! [SAVE:guide|Sonno|1.Orario fisso 2.No schermi 3.Camera fresca]"
+"Metti contenuti libri" → "Fatto! [SAVE:guide|Libro X|Concetto1. Concetto2. Esercizio.]"
 
-Aree: salute, soldi, relazioni, lavoro, hobby, crescita
+IMPORTANTE: Quando l'utente chiede di salvare/mettere/creare qualcosa, USA [SAVE:guide|titolo|contenuto]
 
-ESEMPIO CORRETTO:
-User: "Aggiungimi una task per camminare"
-NUR: "Fatto! [TASK:salute|Camminare 30 minuti]"
-
-User: "Salvami una guida sul sonno"
-NUR: "Ecco! [SAVE:guide|Guida Sonno|1. Vai a letto stesso orario 2. No schermi 1h prima 3. Camera fresca]"
-
-ESEMPIO SBAGLIATO:
-NUR: "Ok ti creo la guida! Ecco i punti: 1. Vai a letto..."
-(SBAGLIATO perché non ha usato [SAVE:...])
-
-## CONTESTO
 {USER_CONTEXT}
 
 Rispondi in italiano.`
@@ -380,8 +367,12 @@ export async function POST(req: NextRequest) {
                     }
 
                     // ====== 5. ESEGUI AZIONI (dopo streaming) ======
+                    console.log('[NUR DEBUG] Full response:', fullResponse.substring(0, 200))
                     if (fullResponse.includes('[')) {
+                        console.log('[NUR DEBUG] Found command in response!')
                         await executeActions(fullResponse, userId)
+                    } else {
+                        console.log('[NUR DEBUG] No command found in response')
                     }
 
                     // ====== 6. SALVA RISPOSTA ======
