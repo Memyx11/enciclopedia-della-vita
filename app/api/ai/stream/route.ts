@@ -308,6 +308,7 @@ export async function POST(req: NextRequest) {
         // ====== 4. UNA SOLA CHIAMATA STREAMING ======
         const encoder = new TextEncoder()
         let fullResponse = ''
+        let pendingBuffer = '' // Buffer per comandi parziali
 
         const readable = new ReadableStream({
             async start(controller) {
@@ -330,13 +331,33 @@ export async function POST(req: NextRequest) {
                             const delta = event.delta as any
                             if (delta.type === 'text_delta' && delta.text) {
                                 fullResponse += delta.text
-                                // Invia solo testo pulito (senza comandi)
-                                const cleanText = delta.text
-                                    .replace(/\[TASK:[^\]]*\]?/g, '')
-                                    .replace(/\[GOAL:[^\]]*\]?/g, '')
-                                    .replace(/\[MEMORY:[^\]]*\]?/g, '')
-                                    .replace(/\[MOOD:[^\]]*\]?/g, '')
-                                    .replace(/\[SAVE:[^\]]*\]?/g, '')
+                                pendingBuffer += delta.text
+
+                                // Cerca comandi completi nel buffer e rimuovili
+                                // Se c'è una [ senza ] corrispondente, aspetta
+                                let textToSend = pendingBuffer
+
+                                // Se c'è un comando in corso ([ senza ]), non inviare quella parte
+                                const lastOpenBracket = textToSend.lastIndexOf('[')
+                                const lastCloseBracket = textToSend.lastIndexOf(']')
+
+                                if (lastOpenBracket > lastCloseBracket) {
+                                    // C'è un comando incompleto, invia solo fino a [
+                                    textToSend = pendingBuffer.substring(0, lastOpenBracket)
+                                    pendingBuffer = pendingBuffer.substring(lastOpenBracket)
+                                } else {
+                                    // Nessun comando incompleto, pulisci e invia tutto
+                                    pendingBuffer = ''
+                                }
+
+                                // Rimuovi comandi completi
+                                const cleanText = textToSend
+                                    .replace(/\[TASK:[^\]]+\]/g, '')
+                                    .replace(/\[GOAL:[^\]]+\]/g, '')
+                                    .replace(/\[MEMORY:[^\]]+\]/g, '')
+                                    .replace(/\[MOOD:[^\]]+\]/g, '')
+                                    .replace(/\[SAVE:[^\]]+\]/g, '')
+
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                                 }
