@@ -80,7 +80,8 @@ export default function ScrivaniaNURPage() {
             }
 
             console.log('[GIORNALE DEBUG] Raw data from DB:', data?.length, 'entries')
-            console.log('[GIORNALE DEBUG] Entry types:', data?.map(e => e.entry_type))
+            console.log('[GIORNALE DEBUG] Entry types:', JSON.stringify(data?.map(e => ({ type: e.entry_type, title: e.title }))))
+            console.log('[GIORNALE DEBUG] Current filter:', filter)
 
             let filtered = data || []
 
