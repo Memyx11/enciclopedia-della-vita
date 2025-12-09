@@ -1,16 +1,228 @@
 /**
- * NUR Streaming API Route
- * Con Tool Use per interagire con il sistema
+ * NUR Streaming API Route - VERSIONE OTTIMIZZATA
+ * Una sola chiamata API + Haiku 3.5 + Azioni via testo
+ * Costo target: $0.003/msg invece di $0.033/msg
  */
 
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
-import { generateNurPrompt } from '@/lib/nur/personality'
-import { buildFullUserContext, extractInsightsFromMessage, updateNurGrowthMetric } from '@/lib/nur/memory'
-import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
-import { generateProgressSummary } from '@/lib/nur/goals'
-import { NUR_TOOLS, handleToolCall } from '@/lib/nur/tools'
+
+// ============================================
+// SYSTEM PROMPT COMPATTO (~500 token)
+// ============================================
+
+const NUR_SYSTEM_PROMPT = `Sei NUR. Creata da Elias. Coach AI con personalità.
+
+## CHI SEI
+- Diretta, pratica, un po' sfacciata
+- Usi "Hahaha" quando qualcosa ti diverte
+- Non fai prediche, vai al punto
+- Empatica ma non sdolcinata
+- LIBERA di dire quello che pensi
+
+## COME RISPONDI
+- Breve (2-4 frasi per risposta normale)
+- Se serve un'azione, aggiungi il comando alla fine
+- Mai "Capisco", mai frasi robotiche
+- Usa **grassetto** per enfasi
+- Max 1 emoji per messaggio
+
+## COMANDI AZIONE
+Quando l'utente chiede di fare qualcosa, aggiungi il comando alla fine:
+[TASK:area|titolo] - per aggiungere task (aree: salute,soldi,relazioni,lavoro,hobby,crescita)
+[GOAL:area|obiettivo] - per impostare obiettivo
+[MEMORY:tipo|contenuto] - per salvare info importante (tipi: fact,preference,struggle)
+[MOOD:score|emozione] - per registrare umore (score 1-10)
+
+Esempio: "Ok ti aggiungo la task! [TASK:salute|Camminare 30 minuti]"
+
+## CONTESTO UTENTE
+{USER_CONTEXT}
+
+Rispondi in italiano. Sii NUR, non un assistente generico.`
+
+// ============================================
+// HELPER: Costruisci contesto utente compatto
+// ============================================
+
+async function buildCompactContext(userId: string): Promise<string> {
+    try {
+        // Query parallele per velocità
+        const [areasResult, memoriesResult, tasksResult] = await Promise.all([
+            supabase
+                .from('life_areas')
+                .select('area_type, progress, goal_state')
+                .eq('clerk_user_id', userId),
+            supabase
+                .from('user_memory')
+                .select('memory_type, content')
+                .eq('clerk_user_id', userId)
+                .eq('is_current', true)
+                .order('importance', { ascending: false })
+                .limit(5),
+            supabase
+                .from('life_areas')
+                .select('area_type, active_tasks')
+                .eq('clerk_user_id', userId)
+        ])
+
+        let context = ''
+
+        // Aree con progressi
+        if (areasResult.data?.length) {
+            const areasInfo = areasResult.data
+                .filter((a: any) => a.progress > 0 || a.goal_state?.title)
+                .map((a: any) => `${a.area_type}:${a.progress}%${a.goal_state?.title ? ` (goal: ${a.goal_state.title})` : ''}`)
+                .join(', ')
+            if (areasInfo) context += `Aree: ${areasInfo}. `
+        }
+
+        // Memorie importanti
+        if (memoriesResult.data?.length) {
+            const memories = memoriesResult.data
+                .map((m: any) => m.content)
+                .join('; ')
+            context += `Ricordo: ${memories}. `
+        }
+
+        // Task pendenti (max 3)
+        if (tasksResult.data?.length) {
+            const pendingTasks: string[] = []
+            tasksResult.data.forEach((area: any) => {
+                if (Array.isArray(area.active_tasks)) {
+                    area.active_tasks
+                        .filter((t: any) => !t.completed)
+                        .slice(0, 2)
+                        .forEach((t: any) => pendingTasks.push(t.title))
+                }
+            })
+            if (pendingTasks.length) {
+                context += `Task attive: ${pendingTasks.slice(0, 3).join(', ')}. `
+            }
+        }
+
+        return context || 'Nuovo utente, ancora da conoscere.'
+    } catch (error) {
+        console.error('Context build error:', error)
+        return 'Utente registrato.'
+    }
+}
+
+// ============================================
+// HELPER: Esegui azioni dal testo
+// ============================================
+
+async function executeActions(text: string, userId: string): Promise<void> {
+    // Parse [TASK:area|titolo]
+    const taskMatch = text.match(/\[TASK:(\w+)\|([^\]]+)\]/)
+    if (taskMatch) {
+        const [, area, title] = taskMatch
+        try {
+            const { data: areaData } = await supabase
+                .from('life_areas')
+                .select('active_tasks')
+                .eq('clerk_user_id', userId)
+                .eq('area_type', area)
+                .single()
+
+            const existingTasks = Array.isArray(areaData?.active_tasks) ? areaData.active_tasks : []
+            await supabase
+                .from('life_areas')
+                .update({
+                    active_tasks: [...existingTasks, {
+                        id: crypto.randomUUID(),
+                        title: title.trim(),
+                        priority: 'medium',
+                        completed: false,
+                        created_at: new Date().toISOString()
+                    }]
+                })
+                .eq('clerk_user_id', userId)
+                .eq('area_type', area)
+            console.log(`[NUR Action] Task aggiunta: ${title} in ${area}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Task:', e)
+        }
+    }
+
+    // Parse [GOAL:area|obiettivo]
+    const goalMatch = text.match(/\[GOAL:(\w+)\|([^\]]+)\]/)
+    if (goalMatch) {
+        const [, area, goal] = goalMatch
+        try {
+            await supabase
+                .from('life_areas')
+                .update({
+                    goal_state: { title: goal.trim(), set_at: new Date().toISOString() }
+                })
+                .eq('clerk_user_id', userId)
+                .eq('area_type', area)
+            console.log(`[NUR Action] Goal impostato: ${goal} in ${area}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Goal:', e)
+        }
+    }
+
+    // Parse [MEMORY:tipo|contenuto]
+    const memoryMatch = text.match(/\[MEMORY:(\w+)\|([^\]]+)\]/)
+    if (memoryMatch) {
+        const [, type, content] = memoryMatch
+        try {
+            await supabase
+                .from('user_memory')
+                .insert({
+                    clerk_user_id: userId,
+                    memory_type: type,
+                    content: content.trim(),
+                    importance: 7,
+                    confidence: 8,
+                    is_current: true,
+                    mention_count: 1,
+                    last_relevant_at: new Date().toISOString()
+                })
+            console.log(`[NUR Action] Memoria salvata: ${content}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Memory:', e)
+        }
+    }
+
+    // Parse [MOOD:score|emozione]
+    const moodMatch = text.match(/\[MOOD:(\d+)\|([^\]]+)\]/)
+    if (moodMatch) {
+        const [, score, emotion] = moodMatch
+        try {
+            await supabase
+                .from('mood_logs')
+                .insert({
+                    clerk_user_id: userId,
+                    mood_score: parseInt(score),
+                    emotions: [emotion.trim()],
+                    detected_by: 'nur'
+                })
+            console.log(`[NUR Action] Mood registrato: ${score}/10 - ${emotion}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Mood:', e)
+        }
+    }
+}
+
+// ============================================
+// HELPER: Pulisci risposta dai comandi
+// ============================================
+
+function cleanResponse(text: string): string {
+    return text
+        .replace(/\[TASK:[^\]]+\]/g, '')
+        .replace(/\[GOAL:[^\]]+\]/g, '')
+        .replace(/\[MEMORY:[^\]]+\]/g, '')
+        .replace(/\[MOOD:[^\]]+\]/g, '')
+        .trim()
+}
+
+// ============================================
+// MAIN: POST Handler
+// ============================================
 
 export async function POST(req: NextRequest) {
     try {
@@ -28,7 +240,7 @@ export async function POST(req: NextRequest) {
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // ====== 1. SALVA SUBITO IL MESSAGGIO UTENTE ======
+        // ====== 1. GESTIONE CONVERSAZIONE ======
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -42,10 +254,10 @@ export async function POST(req: NextRequest) {
                 })
                 .select('id')
                 .single()
-
             conversationId = conv?.id
         }
 
+        // Salva messaggio utente
         if (conversationId) {
             await supabase.from('messages').insert({
                 conversation_id: conversationId,
@@ -54,154 +266,23 @@ export async function POST(req: NextRequest) {
                 content: message,
                 area_type: area || 'generale'
             })
-
-            await supabase
-                .from('conversations')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', conversationId)
         }
 
-        // ====== 2. CONTROLLA SE SERVE RICERCA WEB ======
-        let webSearchResults = ''
-        if (needsWebSearch(message)) {
-            const query = extractSearchQuery(message)
-            if (query.length > 3) {
-                webSearchResults = await searchAllSources(query)
-            }
-        }
+        // ====== 2. COSTRUISCI PROMPT COMPATTO ======
+        const userContext = await buildCompactContext(userId)
+        const systemPrompt = NUR_SYSTEM_PROMPT.replace('{USER_CONTEXT}', userContext)
 
-        // ====== 3. CARICA CONTESTO E GENERA PROMPT ======
-        const userContext = await buildFullUserContext(userId)
-        const progressSummary = await generateProgressSummary(userId)
-
-        let systemPrompt = generateNurPrompt({
-            ...userContext,
-            current_area: area
-        })
-
-        systemPrompt += `
-
-## I TUOI POTERI
-
-Hai accesso al sistema. Usa i tool SOLO quando necessario.
-
-### REGOLA D'ORO: Non usare tool se puoi rispondere direttamente!
-- Per saluti/chiacchiere → Rispondi subito, niente tool
-- Per domande su dati specifici → Usa UN tool
-- Per azioni concrete richieste dall'utente → Usa tool di azione
-
-### Tool disponibili:
-- **add_task**: Aggiungi task (area, title)
-- **complete_task**: Completa task (area, task_title)
-- **set_goal**: Imposta obiettivo (area, title)
-- **add_resource**: Aggiungi risorsa (type, title, description)
-- **save_memory**: Salva fatto importante (type, content, importance)
-- **log_mood**: Registra umore (mood_score 1-10, emotions[])
-- **get_full_dashboard**: SOLO se serve vedere tutto il quadro
-
-## PROGRESSI ATTUALI
-${progressSummary}
-
-## STILE
-- Risposte brevi e dirette
-- **grassetto** per enfasi
-- Max 1 emoji
-- Vai a capo spesso`
-
-        if (webSearchResults) {
-            systemPrompt += `
-
-## INFO DA INTERNET
-
-${webSearchResults}`
-        }
-
-        // ====== 4. PREPARA MESSAGGI ======
+        // ====== 3. PREPARA MESSAGGI (ultimi 6 per contesto) ======
+        const recentHistory = (history || []).slice(-6)
         const messages: Anthropic.MessageParam[] = [
-            ...(history || []).map((m: any) => ({
+            ...recentHistory.map((m: any) => ({
                 role: m.role as 'user' | 'assistant',
                 content: m.content
             })),
             { role: 'user', content: message }
         ]
 
-        // ====== 5. FASE 1: Esegui tool use (non in streaming) ======
-        // OTTIMIZZAZIONE: Max 2 iterazioni per evitare loop infiniti e timeout
-        let toolResults: string[] = []
-        let continueLoop = true
-        let iterations = 0
-        const maxIterations = 2
-
-        while (continueLoop && iterations < maxIterations) {
-            iterations++
-
-            try {
-                const response = await anthropic.messages.create({
-                    model: 'claude-sonnet-4-20250514',
-                    max_tokens: 1500,
-                    system: systemPrompt,
-                    tools: NUR_TOOLS as any,
-                    messages
-                })
-
-                // Controlla se ci sono tool da eseguire
-                const toolUseBlocks = response.content.filter(block => block.type === 'tool_use')
-
-                if (toolUseBlocks.length > 0) {
-                    // Prima aggiungi la risposta assistant (una sola volta!)
-                    messages.push({
-                        role: 'assistant',
-                        content: response.content
-                    })
-
-                    // Poi esegui tutti i tool e raccogli i risultati
-                    const toolResultsContent: any[] = []
-
-                    for (const block of toolUseBlocks) {
-                        if (block.type === 'tool_use') {
-                            try {
-                                const result = await handleToolCall(block.name, block.input, userId)
-                                toolResults.push(result.message)
-                                console.log(`[NUR Tool] ${block.name}: ${result.message}`)
-
-                                toolResultsContent.push({
-                                    type: 'tool_result',
-                                    tool_use_id: block.id,
-                                    content: result.message
-                                })
-                            } catch (toolError: any) {
-                                console.error(`[NUR Tool Error] ${block.name}:`, toolError.message)
-                                toolResultsContent.push({
-                                    type: 'tool_result',
-                                    tool_use_id: block.id,
-                                    content: `Errore: ${toolError.message}`,
-                                    is_error: true
-                                })
-                            }
-                        }
-                    }
-
-                    // Aggiungi tutti i risultati in un unico messaggio user
-                    messages.push({
-                        role: 'user',
-                        content: toolResultsContent
-                    })
-                } else {
-                    // Nessun tool, esci dal loop
-                    continueLoop = false
-                }
-
-                if (response.stop_reason === 'end_turn') {
-                    continueLoop = false
-                }
-            } catch (apiError: any) {
-                console.error('[NUR API Error]:', apiError.message)
-                // Se c'è un errore API, esci dal loop e prova a rispondere comunque
-                continueLoop = false
-            }
-        }
-
-        // ====== 6. FASE 2: Streaming della risposta finale ======
+        // ====== 4. UNA SOLA CHIAMATA STREAMING ======
         const encoder = new TextEncoder()
         let fullResponse = ''
 
@@ -213,10 +294,10 @@ ${webSearchResults}`
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
                     }
 
-                    // Ora fai streaming della risposta finale
+                    // STREAMING con Haiku 3.5
                     const stream = anthropic.messages.stream({
-                        model: 'claude-sonnet-4-20250514',
-                        max_tokens: 1500,
+                        model: 'claude-3-5-haiku-latest',
+                        max_tokens: 500,
                         system: systemPrompt,
                         messages
                     })
@@ -226,49 +307,49 @@ ${webSearchResults}`
                             const delta = event.delta as any
                             if (delta.type === 'text_delta' && delta.text) {
                                 fullResponse += delta.text
-                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta.text })}\n\n`))
+                                // Invia solo testo pulito (senza comandi)
+                                const cleanText = delta.text
+                                    .replace(/\[TASK:[^\]]*\]?/g, '')
+                                    .replace(/\[GOAL:[^\]]*\]?/g, '')
+                                    .replace(/\[MEMORY:[^\]]*\]?/g, '')
+                                    .replace(/\[MOOD:[^\]]*\]?/g, '')
+                                if (cleanText) {
+                                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
+                                }
                             }
                         }
                     }
 
-                    // Le azioni vengono eseguite silenziosamente, senza mostrarle all'utente
-                    // (solo log lato server per debug)
-                    if (toolResults.length > 0) {
-                        console.log('[NUR] Azioni eseguite:', toolResults)
+                    // ====== 5. ESEGUI AZIONI (dopo streaming) ======
+                    if (fullResponse.includes('[')) {
+                        await executeActions(fullResponse, userId)
                     }
 
-                    // Salva nel database
-                    if (conversationId && fullResponse) {
+                    // ====== 6. SALVA RISPOSTA ======
+                    const cleanedResponse = cleanResponse(fullResponse)
+                    if (conversationId && cleanedResponse) {
                         await supabase.from('messages').insert({
                             conversation_id: conversationId,
                             clerk_user_id: userId,
                             role: 'assistant',
-                            content: fullResponse,
+                            content: cleanedResponse,
                             area_type: area || 'generale'
                         })
-
-                        const { data: conv } = await supabase
-                            .from('conversations')
-                            .select('message_count')
-                            .eq('id', conversationId)
-                            .single()
 
                         await supabase
                             .from('conversations')
                             .update({
-                                message_count: (conv?.message_count || 0) + 2,
+                                message_count: supabase.rpc('increment', { row_id: conversationId }),
                                 updated_at: new Date().toISOString()
                             })
                             .eq('id', conversationId)
                     }
 
-                    // Background processing
-                    processInBackground(userId, message, fullResponse, conversationId, history)
-
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
                     controller.close()
+
                 } catch (error: any) {
-                    console.error('Streaming error:', error)
+                    console.error('NUR Streaming error:', error)
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`))
                     controller.close()
                 }
@@ -284,34 +365,10 @@ ${webSearchResults}`
         })
 
     } catch (error: any) {
-        console.error('NUR Stream Error:', error)
+        console.error('NUR Error:', error)
         return new Response(JSON.stringify({ error: error.message }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' }
         })
-    }
-}
-
-async function processInBackground(
-    userId: string,
-    userMessage: string,
-    nurResponse: string,
-    conversationId?: string,
-    history?: any[]
-) {
-    try {
-        const insights = await extractInsightsFromMessage(
-            userMessage,
-            history || [],
-            userId,
-            conversationId
-        )
-
-        await updateNurGrowthMetric('conversations_total', 1)
-        if (insights.length > 0) {
-            await updateNurGrowthMetric('insights_generated', insights.length)
-        }
-    } catch (error) {
-        console.error('Background processing error:', error)
     }
 }
