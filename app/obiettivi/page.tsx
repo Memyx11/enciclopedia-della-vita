@@ -28,7 +28,7 @@ export default function ObiettiviPage() {
                 .select('id, title, status')
                 .eq('clerk_user_id', user.id)
                 .eq('status', 'active')
-                .single()
+                .maybeSingle()
 
             if (!error && data) {
                 setMission(data)

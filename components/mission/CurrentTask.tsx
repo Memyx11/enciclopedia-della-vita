@@ -56,7 +56,7 @@ export default function CurrentTask() {
                 .in('level', ['micro', 'task'])
                 .order('level', { ascending: false })
                 .limit(1)
-                .single()
+                .maybeSingle()
 
             if (!error && data) {
                 setTask({
