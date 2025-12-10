@@ -113,6 +113,21 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+}
+
+.home-btn {
+    font-size: 20px;
+    text-decoration: none;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    transition: all 0.2s;
+}
+
+.home-btn:hover {
+    background: var(--primary);
+    transform: scale(1.1);
 }
 
 .player {

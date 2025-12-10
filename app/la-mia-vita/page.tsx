@@ -393,6 +393,9 @@ export default function DashboardPage() {
             {/* ══════════════════════════════════════════════════════════ */}
             <header className="topbar">
                 <div className="topbar-inner">
+                    <Link href="/" className="home-btn" title="Home">
+                        🏠
+                    </Link>
                     <div className="player">
                         <div className="level-badge">
                             <div className="level-ring" style={{ '--progress': `${xpProgress}%` } as React.CSSProperties}></div>
