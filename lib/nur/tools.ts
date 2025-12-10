@@ -23,6 +23,53 @@ export const NUR_TOOLS = [
         }
     },
     {
+        name: 'set_mission',
+        description: 'Imposta o aggiorna la missione principale dell\'utente nella dashboard. Usa quando l\'utente definisce un grande obiettivo di vita.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                title: { type: 'string', description: 'Titolo della missione (es. "Diventare finanziariamente libero")' },
+                description: { type: 'string', description: 'Descrizione breve della missione' },
+                start_value: { type: 'number', description: 'Valore di partenza (es. -5000 per debiti)' },
+                target_value: { type: 'number', description: 'Valore obiettivo da raggiungere (es. 50000)' },
+                current_value: { type: 'number', description: 'Valore attuale (es. 8500)' },
+                unit: { type: 'string', description: 'Unità di misura (es. "euro", "kg", "ore")' },
+                target_date: { type: 'string', description: 'Data obiettivo in formato YYYY-MM-DD' }
+            },
+            required: ['title']
+        }
+    },
+    {
+        name: 'add_objective',
+        description: 'Aggiunge un obiettivo al piano della missione. Gli obiettivi formano un albero: major > sub > task.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                title: { type: 'string', description: 'Titolo dell\'obiettivo' },
+                level: { type: 'string', enum: ['major', 'sub', 'task'], description: 'Livello: major (principale), sub (sotto-obiettivo), task (azione)' },
+                parent_title: { type: 'string', description: 'Titolo dell\'obiettivo padre (se è un sub o task)' },
+                description: { type: 'string', description: 'Descrizione opzionale' },
+                status: { type: 'string', enum: ['pending', 'active', 'completed'], description: 'Stato iniziale' }
+            },
+            required: ['title', 'level']
+        }
+    },
+    {
+        name: 'update_progress',
+        description: 'Aggiorna il progresso della missione o di un obiettivo.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                type: { type: 'string', enum: ['mission', 'objective'], description: 'Cosa aggiornare' },
+                title: { type: 'string', description: 'Titolo dell\'obiettivo da aggiornare (solo se type=objective)' },
+                current_value: { type: 'number', description: 'Nuovo valore corrente (per missione)' },
+                progress: { type: 'number', description: 'Percentuale di progresso 0-100 (per obiettivo)' },
+                status: { type: 'string', enum: ['pending', 'active', 'completed'], description: 'Nuovo stato' }
+            },
+            required: ['type']
+        }
+    },
+    {
         name: 'add_task',
         description: 'Aggiunge un task a un\'area. Usa quando l\'utente vuole fare qualcosa di concreto.',
         input_schema: {
@@ -114,6 +161,12 @@ export async function handleToolCall(
         switch (toolName) {
             case 'get_full_dashboard':
                 return await handleGetFullDashboard(userId)
+            case 'set_mission':
+                return await handleSetMission(userId, input)
+            case 'add_objective':
+                return await handleAddObjective(userId, input)
+            case 'update_progress':
+                return await handleUpdateProgress(userId, input)
             case 'add_task':
                 return await handleAddTask(userId, input)
             case 'set_goal':
@@ -175,6 +228,229 @@ async function handleGetFullDashboard(
         success: true,
         message: `Progresso totale: ${totalProgress}%`,
         data: summary
+    }
+}
+
+// ============================================
+// MISSION & OBJECTIVES HANDLERS
+// ============================================
+
+async function handleSetMission(
+    userId: string,
+    input: {
+        title: string
+        description?: string
+        start_value?: number
+        target_value?: number
+        current_value?: number
+        unit?: string
+        target_date?: string
+    }
+): Promise<{ success: boolean; message: string; data?: any }> {
+    // Prima controlla se esiste già una missione attiva
+    const { data: existingMission } = await supabase
+        .from('user_mission')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle()
+
+    if (existingMission) {
+        // Aggiorna la missione esistente
+        const { error } = await supabase
+            .from('user_mission')
+            .update({
+                title: input.title,
+                description: input.description || null,
+                start_value: input.start_value || null,
+                target_value: input.target_value || null,
+                current_value: input.current_value ?? input.start_value ?? null,
+                unit: input.unit || null,
+                target_date: input.target_date || null,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', existingMission.id)
+
+        if (error) {
+            console.error('Error updating mission:', error)
+            return { success: false, message: 'Errore aggiornamento missione' }
+        }
+
+        return {
+            success: true,
+            message: `Missione aggiornata: "${input.title}"`,
+            data: { mission_id: existingMission.id }
+        }
+    }
+
+    // Crea nuova missione
+    const { data: newMission, error } = await supabase
+        .from('user_mission')
+        .insert({
+            clerk_user_id: userId,
+            title: input.title,
+            description: input.description || null,
+            start_value: input.start_value || null,
+            target_value: input.target_value || null,
+            current_value: input.current_value ?? input.start_value ?? null,
+            unit: input.unit || null,
+            start_date: new Date().toISOString().split('T')[0],
+            target_date: input.target_date || null,
+            status: 'active'
+        })
+        .select('id')
+        .single()
+
+    if (error) {
+        console.error('Error creating mission:', error)
+        return { success: false, message: 'Errore creazione missione' }
+    }
+
+    return {
+        success: true,
+        message: `Missione creata: "${input.title}"`,
+        data: { mission_id: newMission.id }
+    }
+}
+
+async function handleAddObjective(
+    userId: string,
+    input: {
+        title: string
+        level: 'major' | 'sub' | 'task'
+        parent_title?: string
+        description?: string
+        status?: 'pending' | 'active' | 'completed'
+    }
+): Promise<{ success: boolean; message: string }> {
+    // Prima trova la missione attiva
+    const { data: mission } = await supabase
+        .from('user_mission')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle()
+
+    if (!mission) {
+        return { success: false, message: 'Nessuna missione attiva. Prima imposta una missione.' }
+    }
+
+    // Se ha un parent, trovalo
+    let parentId: string | null = null
+    if (input.parent_title) {
+        const { data: parent } = await supabase
+            .from('objectives')
+            .select('id')
+            .eq('clerk_user_id', userId)
+            .eq('mission_id', mission.id)
+            .ilike('title', `%${input.parent_title}%`)
+            .maybeSingle()
+
+        if (parent) {
+            parentId = parent.id
+        }
+    }
+
+    // Conta gli obiettivi esistenti per determinare sort_order
+    const { count } = await supabase
+        .from('objectives')
+        .select('*', { count: 'exact', head: true })
+        .eq('clerk_user_id', userId)
+        .eq('mission_id', mission.id)
+
+    const { error } = await supabase
+        .from('objectives')
+        .insert({
+            clerk_user_id: userId,
+            mission_id: mission.id,
+            parent_id: parentId,
+            title: input.title,
+            description: input.description || null,
+            level: input.level,
+            status: input.status || 'pending',
+            progress: input.status === 'completed' ? 100 : 0,
+            sort_order: (count || 0) + 1
+        })
+
+    if (error) {
+        console.error('Error adding objective:', error)
+        return { success: false, message: 'Errore aggiunta obiettivo' }
+    }
+
+    return {
+        success: true,
+        message: `Obiettivo aggiunto: "${input.title}" (${input.level})`
+    }
+}
+
+async function handleUpdateProgress(
+    userId: string,
+    input: {
+        type: 'mission' | 'objective'
+        title?: string
+        current_value?: number
+        progress?: number
+        status?: 'pending' | 'active' | 'completed'
+    }
+): Promise<{ success: boolean; message: string }> {
+    if (input.type === 'mission') {
+        const updates: Record<string, any> = { updated_at: new Date().toISOString() }
+
+        if (input.current_value !== undefined) {
+            updates.current_value = input.current_value
+        }
+        if (input.status) {
+            updates.status = input.status
+        }
+
+        const { error } = await supabase
+            .from('user_mission')
+            .update(updates)
+            .eq('clerk_user_id', userId)
+            .eq('status', 'active')
+
+        if (error) {
+            return { success: false, message: 'Errore aggiornamento missione' }
+        }
+
+        return {
+            success: true,
+            message: input.current_value
+                ? `Missione aggiornata: nuovo valore ${input.current_value}`
+                : `Stato missione aggiornato`
+        }
+    }
+
+    // Aggiorna obiettivo
+    if (!input.title) {
+        return { success: false, message: 'Specifica il titolo dell\'obiettivo da aggiornare' }
+    }
+
+    const updates: Record<string, any> = { updated_at: new Date().toISOString() }
+
+    if (input.progress !== undefined) {
+        updates.progress = Math.max(0, Math.min(100, input.progress))
+    }
+    if (input.status) {
+        updates.status = input.status
+        if (input.status === 'completed') {
+            updates.progress = 100
+        }
+    }
+
+    const { error } = await supabase
+        .from('objectives')
+        .update(updates)
+        .eq('clerk_user_id', userId)
+        .ilike('title', `%${input.title}%`)
+
+    if (error) {
+        return { success: false, message: 'Errore aggiornamento obiettivo' }
+    }
+
+    return {
+        success: true,
+        message: `Obiettivo "${input.title}" aggiornato`
     }
 }
 
