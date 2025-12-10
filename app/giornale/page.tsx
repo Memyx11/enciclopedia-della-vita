@@ -361,27 +361,19 @@ export default function ScrivaniaNURPage() {
                 )}
             </main>
 
-            {/* Bottom Navigation */}
+            {/* BOTTOM NAV - SOLO 3 VOCI */}
             <nav className="bottom-nav">
-                <Link href="/" className="nav-item">
+                <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🏠</span>
-                    <span className="nav-label">Home</span>
+                    <span className="nav-label">Dashboard</span>
                 </Link>
                 <Link href="/chat" className="nav-item">
                     <span className="nav-icon">💬</span>
                     <span className="nav-label">Chat</span>
                 </Link>
-                <Link href="/obiettivi" className="nav-item">
-                    <span className="nav-icon">🎯</span>
-                    <span className="nav-label">Obiettivi</span>
-                </Link>
                 <Link href="/giornale" className="nav-item active">
-                    <span className="nav-icon">📋</span>
+                    <span className="nav-icon">📚</span>
                     <span className="nav-label">Scrivania</span>
-                </Link>
-                <Link href="/la-mia-vita" className="nav-item">
-                    <span className="nav-icon">🌌</span>
-                    <span className="nav-label">Vita</span>
                 </Link>
             </nav>
         </div>

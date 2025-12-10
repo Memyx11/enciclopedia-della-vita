@@ -472,7 +472,7 @@
 
 /* Footer */
 .chat-footer {
-    padding: 12px 16px 20px;
+    padding: 12px 16px 80px;
     background: rgba(0, 0, 0, 0.3);
     border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -783,4 +783,38 @@
 
 .message-bubble.streaming .markdown-content {
     display: inline;
+}
+
+/* ===== BOTTOM NAV ===== */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-around;
+    padding: 12px 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: rgba(10, 10, 15, 0.98);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    z-index: 1000;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    font-size: 10px;
+    padding: 8px 24px;
+}
+
+.nav-item.active {
+    color: var(--nur-primary);
+}
+
+.nav-item span:first-child {
+    font-size: 20px;
 }

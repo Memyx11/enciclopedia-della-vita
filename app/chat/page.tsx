@@ -651,6 +651,22 @@ function ChatContent() {
                     </button>
                 </div>
             </footer>
+
+            {/* BOTTOM NAV - SOLO 3 VOCI */}
+            <nav className="bottom-nav">
+                <Link href="/la-mia-vita" className="nav-item">
+                    <span>🏠</span>
+                    <span>Dashboard</span>
+                </Link>
+                <Link href="/chat" className="nav-item active">
+                    <span>💬</span>
+                    <span>Chat</span>
+                </Link>
+                <Link href="/giornale" className="nav-item">
+                    <span>📚</span>
+                    <span>Scrivania</span>
+                </Link>
+            </nav>
         </div>
     )
 }
