@@ -19,14 +19,48 @@ const ACTION_KEYWORDS = [
     'task', 'traguardo', 'traguardi', 'obiettivo', 'obiettivi',
     'contenuto', 'contenuti', 'guida', 'viaggio', 'piano',
     'registra', 'annota', 'segna', 'inserisci',
-    // Nuovi per sistema missione
+    // Per sistema missione
     'missione', 'problema', 'paura', 'desiderio', 'forza', 'debolezza',
-    'insight', 'progress', 'avanzamento'
+    'insight', 'progress', 'avanzamento',
+    // Per conferme - attivano Sonnet quando l'utente conferma
+    'dashboard', 'fallo', 'salvalo', 'ok fallo', 'sì fallo'
 ]
 
-function needsSonnet(message: string): boolean {
-    const lowerMsg = message.toLowerCase()
-    return ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))
+// Messaggi di conferma brevi che richiedono contesto dalla conversazione
+const CONFIRMATION_PATTERNS = [
+    /^s[iì]!?$/i,           // "sì", "si", "si!", "sì!"
+    /^ok!?$/i,              // "ok", "ok!"
+    /^va bene!?$/i,         // "va bene"
+    /^fallo!?$/i,           // "fallo"
+    /^salvalo!?$/i,         // "salvalo"
+    /^perfetto!?$/i,        // "perfetto"
+    /^procedi!?$/i,         // "procedi"
+    /^certo!?$/i            // "certo"
+]
+
+function needsSonnet(message: string, history?: any[]): boolean {
+    const lowerMsg = message.toLowerCase().trim()
+
+    // Check action keywords
+    if (ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))) {
+        return true
+    }
+
+    // Check confirmation patterns (solo se c'è una storia di conversazione)
+    if (history && history.length > 0) {
+        if (CONFIRMATION_PATTERNS.some(pattern => pattern.test(lowerMsg))) {
+            // Verifica se NUR ha chiesto qualcosa tipo "vuoi che lo salvi?"
+            const lastNurMessage = [...history].reverse().find(m => m.role === 'assistant')?.content?.toLowerCase() || ''
+            if (lastNurMessage.includes('salv') ||
+                lastNurMessage.includes('dashboard') ||
+                lastNurMessage.includes('vuoi che') ||
+                lastNurMessage.includes('lo faccio')) {
+                return true
+            }
+        }
+    }
+
+    return false
 }
 
 // ============================================
@@ -51,40 +85,43 @@ Rispondi in italiano.`
 // PROMPT SONNET - Solo azioni
 // ============================================
 
-const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Esegui il comando richiesto.
+const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. DEVI SEMPRE eseguire il comando quando l'utente conferma.
+
+⚠️ REGOLA FONDAMENTALE: Quando l'utente dice "sì", "ok", "fallo", "salvalo" o conferma in qualsiasi modo, DEVI OBBLIGATORIAMENTE includere i comandi tra parentesi quadre. MAI rispondere solo con testo se l'utente ha chiesto di salvare/creare qualcosa.
 
 COMANDI DISPONIBILI:
 
 CONTENUTI:
-[SAVE:guide|titolo|contenuto] = salva guida nella Scrivania
-[SAVE:viaggio|titolo|contenuto] = salva piano viaggio
-[TASK:area|titolo] = aggiunge task a un'area
-[GOAL:area|obiettivo] = imposta traguardo area
-[MEMORY:fact|contenuto] = ricorda fatto importante
+[SAVE:tipo|titolo|contenuto] = salva nella Scrivania (tipo: guide, article, resource)
+[TASK:area|titolo] = aggiunge task
+[MEMORY:fact|contenuto] = ricorda fatto
 
-SISTEMA MISSIONE:
-[INSIGHT:category|content] = salva insight sull'utente (category: problem, desire, fear, strength, weakness, context)
-[MISSION:title|description|why] = imposta missione principale
-[OBJECTIVE:level|parent|title|areas] = crea obiettivo (level: major, sub, task, micro)
-[PROGRESS:objective_id|value] = aggiorna progresso
+SISTEMA DASHBOARD:
+[MISSION:titolo|descrizione|motivazione] = OBBLIGATORIO - crea missione nella dashboard
+[OBJECTIVE:major|mission|titolo|aree] = obiettivo principale (parent è sempre "mission")
+[OBJECTIVE:sub|nome_parent|titolo|aree] = sotto-obiettivo
+[OBJECTIVE:task|nome_parent|titolo|aree] = task
 
-Aree valide: salute, soldi, relazioni, lavoro, hobby, crescita
+Aree: salute, soldi, relazioni, lavoro, hobby, crescita
 
-ISTRUZIONI:
-1. Capisci cosa vuole l'utente
-2. Usa il comando appropriato con contenuto COMPLETO e UTILE
-3. Conferma brevemente (max 2 frasi)
+⚠️ QUANDO L'UTENTE CONFERMA (sì, ok, salvalo, fallo):
+DEVI SEMPRE generare i comandi! Esempio:
 
-ESEMPI:
-"salvami una guida sul sonno" → "Fatto! [SAVE:guide|Guida Sonno|1. Orario fisso. 2. No schermi. 3. Camera fresca.]"
-"il mio problema è che non risparmio" → "Capito. [INSIGHT:problem|Non riesce a risparmiare soldi]"
-"la mia missione è diventare libero" → "Fantastico! [MISSION:Libertà finanziaria|Raggiungere indipendenza economica|Per vivere senza stress]"
+User: "voglio migliorare le mie finanze"
+NUR: "Perfetto! Vuoi che lo salvi nella dashboard?"
+User: "sì"
+NUR: "[MISSION:Migliorare le Finanze|Raggiungere stabilità economica|Per vivere serenamente] [OBJECTIVE:major|mission|Aumentare entrate|soldi] [OBJECTIVE:major|mission|Ridurre spese|soldi] Fatto! Ho salvato la missione nella dashboard con i primi obiettivi."
+
+ALTRO ESEMPIO:
+User: "sì salvalo" oppure "si!"
+NUR: "[MISSION:...] [OBJECTIVE:...] Perfetto, salvato!"
 
 {USER_CONTEXT}
 
 CONVERSAZIONE RECENTE:
 {RECENT_MESSAGES}
 
+RICORDA: Se l'utente ha confermato, INCLUDI I COMANDI. Non rispondere mai solo con testo.
 Rispondi in italiano.`
 
 // ============================================
@@ -461,7 +498,7 @@ export async function POST(req: NextRequest) {
         })
 
         // ====== 1. ROUTING: HAIKU O SONNET? ======
-        const useSonnet = needsSonnet(message)
+        const useSonnet = needsSonnet(message, history)
         const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
         console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
 
