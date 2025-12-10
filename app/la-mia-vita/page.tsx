@@ -16,32 +16,37 @@ interface UserStats {
     xp_to_next: number
     streak: number
     lives: number
-    rank: string
-    streak_multiplier: number
+    rank_name: string
+    rank_emoji: string
 }
 
-interface Mission {
+interface Chapter {
     id: string
     title: string
-    description: string
-    target_value: number
-    current_value: number
-    unit: string
-    status: 'active' | 'completed' | 'locked'
+    order_index: number
 }
 
 interface Task {
     id: string
     title: string
     description: string
-    status: 'completed' | 'active' | 'locked'
-    order_index: number
-    xp_reward: number
     difficulty: 'easy' | 'medium' | 'hard'
+    xp_reward: number
     estimated_minutes: number
+    status: 'pending' | 'completed'
+    order_index: number
+    chapter_id: string
+    chapter_title?: string
+    displayStatus?: 'done' | 'current' | 'locked'
 }
 
-interface JournalEntry {
+interface Mission {
+    id: string
+    title: string
+    description: string
+}
+
+interface Material {
     id: string
     title: string
     content: string
@@ -62,13 +67,13 @@ const RANKS = [
     { level: 50, name: 'Leggenda', emoji: '👑' },
 ]
 
-const DIFFICULTY_CONFIG: Record<string, { label: string; xp: number; time: number }> = {
-    easy: { label: 'Facile', xp: 30, time: 15 },
-    medium: { label: 'Media', xp: 60, time: 30 },
-    hard: { label: 'Difficile', xp: 100, time: 60 },
+const DIFFICULTY_CONFIG = {
+    easy: { label: 'Facile', xp: 30, time: 15, color: '#22c55e' },
+    medium: { label: 'Media', xp: 60, time: 30, color: '#f59e0b' },
+    hard: { label: 'Difficile', xp: 100, time: 60, color: '#ef4444' },
 }
 
-function getRank(level: number): { name: string; emoji: string } {
+function getRank(level: number) {
     for (let i = RANKS.length - 1; i >= 0; i--) {
         if (level >= RANKS[i].level) return RANKS[i]
     }
@@ -77,13 +82,6 @@ function getRank(level: number): { name: string; emoji: string } {
 
 function getXpForLevel(level: number): number {
     return Math.floor(100 * Math.pow(level, 1.5))
-}
-
-function getStreakMultiplier(streak: number): number {
-    if (streak >= 100) return 2.5
-    if (streak >= 30) return 2.0
-    if (streak >= 7) return 1.5
-    return 1.0
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -100,15 +98,16 @@ export default function DashboardPage() {
         xp_to_next: 100,
         streak: 0,
         lives: 3,
-        rank: '🌱 Seme',
-        streak_multiplier: 1.0
+        rank_name: 'Seme',
+        rank_emoji: '🌱'
     })
     const [mission, setMission] = useState<Mission | null>(null)
+    const [chapter, setChapter] = useState<Chapter | null>(null)
     const [tasks, setTasks] = useState<Task[]>([])
     const [activeTask, setActiveTask] = useState<Task | null>(null)
-    const [materials, setMaterials] = useState<JournalEntry[]>([])
+    const [materials, setMaterials] = useState<Material[]>([])
     const [loading, setLoading] = useState(true)
-    const [activePanel, setActivePanel] = useState<string | null>(null)
+    const [activePanel, setActivePanel] = useState<'scrivania' | 'dashboard' | 'note' | null>(null)
     const [taskNotes, setTaskNotes] = useState('')
     const [showModal, setShowModal] = useState(false)
     const [modalData, setModalData] = useState({ xp: 0, streak: 0, levelUp: false })
@@ -119,7 +118,6 @@ export default function DashboardPage() {
 
     const loadData = useCallback(async () => {
         if (!user) return
-        console.log('[Dashboard] loadData starting for user:', user.id)
 
         try {
             // 1. Load user stats
@@ -131,21 +129,19 @@ export default function DashboardPage() {
 
             if (statsData) {
                 const level = statsData.level || 1
-                const streak = statsData.streak || 0
                 const rank = getRank(level)
-
                 setStats({
                     level,
                     xp: statsData.xp || 0,
                     xp_to_next: getXpForLevel(level),
-                    streak,
+                    streak: statsData.streak || 0,
                     lives: statsData.lives ?? 3,
-                    rank: rank.emoji + ' ' + rank.name,
-                    streak_multiplier: getStreakMultiplier(streak)
+                    rank_name: rank.name,
+                    rank_emoji: rank.emoji
                 })
             }
 
-            // 2. Load active mission (Obiettivo Finale)
+            // 2. Load active mission
             const { data: missionData } = await supabase
                 .from('user_mission')
                 .select('*')
@@ -157,7 +153,7 @@ export default function DashboardPage() {
             if (missionData) {
                 setMission(missionData)
 
-                // 3. Load tasks for this mission (ordered)
+                // 3. Load tasks for this mission (ordered by sort_order)
                 const { data: tasksData } = await supabase
                     .from('objectives')
                     .select('*')
@@ -166,45 +162,40 @@ export default function DashboardPage() {
                     .order('sort_order', { ascending: true })
 
                 if (tasksData && tasksData.length > 0) {
-                    // Map to our Task interface
-                    const mappedTasks: Task[] = tasksData.map((t: any, index: number) => ({
+                    // CHAIN LOGIC: Find FIRST non-completed task = ACTIVE
+                    const firstPending = tasksData.find(t => t.status !== 'completed')
+
+                    // Map tasks with display status
+                    const processedTasks: Task[] = tasksData.map((t, index) => ({
                         id: t.id,
                         title: t.title,
                         description: t.description || '',
-                        status: t.status as 'completed' | 'active' | 'locked',
-                        order_index: t.sort_order || index,
-                        xp_reward: t.xp_reward || DIFFICULTY_CONFIG[t.difficulty || 'medium'].xp,
                         difficulty: t.difficulty || 'medium',
-                        estimated_minutes: t.estimated_minutes || DIFFICULTY_CONFIG[t.difficulty || 'medium'].time
+                        xp_reward: t.xp_reward || DIFFICULTY_CONFIG[t.difficulty || 'medium'].xp,
+                        estimated_minutes: t.estimated_minutes || DIFFICULTY_CONFIG[t.difficulty || 'medium'].time,
+                        status: t.status,
+                        order_index: t.sort_order || index,
+                        chapter_id: t.chapter_id || '',
+                        chapter_title: t.chapter_title || 'Capitolo 1',
+                        // CHAIN LOGIC: done/current/locked
+                        displayStatus: t.status === 'completed'
+                            ? 'done'
+                            : t.id === firstPending?.id
+                                ? 'current'
+                                : 'locked'
                     }))
 
-                    // Ensure chain logic: only first non-completed is active
-                    let foundActive = false
-                    const chainedTasks = mappedTasks.map(task => {
-                        if (task.status === 'completed') {
-                            return task
-                        } else if (!foundActive) {
-                            foundActive = true
-                            return { ...task, status: 'active' as const }
-                        } else {
-                            return { ...task, status: 'locked' as const }
-                        }
-                    })
+                    setTasks(processedTasks)
+                    setActiveTask(processedTasks.find(t => t.displayStatus === 'current') || null)
 
-                    setTasks(chainedTasks)
-
-                    // Set active task
-                    const active = chainedTasks.find(t => t.status === 'active')
-                    setActiveTask(active || null)
-
-                    // Update mission progress
-                    const completedCount = chainedTasks.filter(t => t.status === 'completed').length
-                    setMission(prev => prev ? {
-                        ...prev,
-                        current_value: completedCount,
-                        target_value: chainedTasks.length,
-                        status: completedCount === chainedTasks.length ? 'completed' : 'active'
-                    } : null)
+                    // Set chapter from first task
+                    if (processedTasks[0]?.chapter_title) {
+                        setChapter({
+                            id: processedTasks[0].chapter_id,
+                            title: processedTasks[0].chapter_title,
+                            order_index: 1
+                        })
+                    }
                 }
             }
 
@@ -226,22 +217,31 @@ export default function DashboardPage() {
             if (savedNotes) setTaskNotes(savedNotes)
 
         } catch (error) {
-            console.error('[Dashboard] Error loading data:', error)
+            console.error('Error loading data:', error)
         } finally {
-            console.log('[Dashboard] loadData finished, setting loading=false')
             setLoading(false)
         }
     }, [user])
 
     useEffect(() => {
-        console.log('[Dashboard] isLoaded:', isLoaded, 'user:', !!user)
         if (isLoaded && user) {
             loadData()
         } else if (isLoaded && !user) {
-            console.log('[Dashboard] No user, stopping loading')
             setLoading(false)
         }
     }, [isLoaded, user, loadData])
+
+    // Keyboard shortcuts for panels
+    useEffect(() => {
+        const handleKeyPress = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLTextAreaElement) return
+            if (e.key === '1') togglePanel('scrivania')
+            if (e.key === '2') togglePanel('dashboard')
+            if (e.key === '3') togglePanel('note')
+        }
+        window.addEventListener('keypress', handleKeyPress)
+        return () => window.removeEventListener('keypress', handleKeyPress)
+    }, [activePanel])
 
     // ═══════════════════════════════════════════════════════════════
     // ACTIONS
@@ -250,8 +250,7 @@ export default function DashboardPage() {
     const completeTask = async () => {
         if (!user || !activeTask) return
 
-        const xpBase = activeTask.xp_reward
-        const xpWithMultiplier = Math.round(xpBase * stats.streak_multiplier)
+        const xpEarned = activeTask.xp_reward
         const newStreak = stats.streak + 1
 
         try {
@@ -265,18 +264,8 @@ export default function DashboardPage() {
                 })
                 .eq('id', activeTask.id)
 
-            // 2. Unlock next task if exists
-            const currentIndex = tasks.findIndex(t => t.id === activeTask.id)
-            if (currentIndex < tasks.length - 1) {
-                const nextTask = tasks[currentIndex + 1]
-                await supabase
-                    .from('objectives')
-                    .update({ status: 'active' })
-                    .eq('id', nextTask.id)
-            }
-
-            // 3. Update user stats
-            const newXp = stats.xp + xpWithMultiplier
+            // 2. Update user stats
+            const newXp = stats.xp + xpEarned
             let newLevel = stats.level
             let remainingXp = newXp
             let levelUp = false
@@ -298,20 +287,20 @@ export default function DashboardPage() {
                     last_activity: new Date().toISOString()
                 }, { onConflict: 'clerk_user_id' })
 
-            // 4. Check if mission completed
-            const completedCount = tasks.filter(t => t.status === 'completed').length + 1
-            if (mission && completedCount === tasks.length) {
+            // 3. Check if all tasks completed (mission done)
+            const remainingTasks = tasks.filter(t => t.id !== activeTask.id && t.status !== 'completed')
+            if (remainingTasks.length === 0 && mission) {
                 await supabase
                     .from('user_mission')
                     .update({ status: 'completed', completed_at: new Date().toISOString() })
                     .eq('id', mission.id)
             }
 
-            // 5. Show modal
-            setModalData({ xp: xpWithMultiplier, streak: newStreak, levelUp })
+            // 4. Show celebration modal
+            setModalData({ xp: xpEarned, streak: newStreak, levelUp })
             setShowModal(true)
 
-            // 6. Reload
+            // 5. Reload data
             setTimeout(() => loadData(), 500)
 
         } catch (error) {
@@ -321,10 +310,9 @@ export default function DashboardPage() {
 
     const skipTask = async () => {
         if (!user || stats.lives <= 0) {
-            alert('Non hai piu vite! Completa una task per continuare.')
+            alert('Non hai più vite! Completa una task per continuare.')
             return
         }
-
         if (!confirm('Saltare costa 1 vita e -10 XP. Confermi?')) return
 
         try {
@@ -350,18 +338,21 @@ export default function DashboardPage() {
         }
     }
 
-    const togglePanel = (panel: string) => {
+    const togglePanel = (panel: 'scrivania' | 'dashboard' | 'note') => {
         setActivePanel(activePanel === panel ? null : panel)
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // COMPUTED
+    // COMPUTED VALUES
     // ═══════════════════════════════════════════════════════════════
 
-    const xpProgress = Math.round((stats.xp % stats.xp_to_next) / stats.xp_to_next * 100)
-    const completedTasks = tasks.filter(t => t.status === 'completed').length
-    const missionProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0
-    const isObjectiveUnlocked = completedTasks === tasks.length && tasks.length > 0
+    const xpProgress = stats.xp_to_next > 0
+        ? Math.round((stats.xp % stats.xp_to_next) / stats.xp_to_next * 100)
+        : 0
+    const completedTasks = tasks.filter(t => t.displayStatus === 'done').length
+    const totalTasks = tasks.length
+    const chapterProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+    const isDestinationUnlocked = completedTasks === totalTasks && totalTasks > 0
 
     // ═══════════════════════════════════════════════════════════════
     // RENDER
@@ -397,25 +388,25 @@ export default function DashboardPage() {
         <div className="dashboard-page">
             <div className="bg-ambient"></div>
 
-            {/* TOP BAR */}
+            {/* ══════════════════════════════════════════════════════════ */}
+            {/* TOPBAR */}
+            {/* ══════════════════════════════════════════════════════════ */}
             <header className="topbar">
                 <div className="topbar-inner">
                     <div className="player">
-                        <div className="level-badge" style={{ '--progress': xpProgress } as React.CSSProperties}>
-                            <div className="level-ring"></div>
+                        <div className="level-badge">
+                            <div className="level-ring" style={{ '--progress': `${xpProgress}%` } as React.CSSProperties}></div>
                             <div className="level-inner">
                                 <span className="level-num">{stats.level}</span>
                             </div>
                         </div>
                         <div className="player-info">
-                            <div className="player-rank">{stats.rank}</div>
+                            <div className="player-rank">{stats.rank_emoji} {stats.rank_name}</div>
                             <div className="xp-row">
                                 <div className="xp-bar">
                                     <div className="xp-fill" style={{ width: `${xpProgress}%` }}></div>
                                 </div>
-                                <span className="xp-text">
-                                    {stats.xp.toLocaleString()} / {stats.xp_to_next.toLocaleString()}
-                                </span>
+                                <span className="xp-text">{stats.xp}/{stats.xp_to_next}</span>
                             </div>
                         </div>
                     </div>
@@ -424,9 +415,6 @@ export default function DashboardPage() {
                         <div className="streak">
                             <span>🔥</span>
                             <span>{stats.streak}</span>
-                            {stats.streak_multiplier > 1 && (
-                                <span className="multiplier">x{stats.streak_multiplier}</span>
-                            )}
                         </div>
                         <div className="lives">
                             {[...Array(3)].map((_, i) => (
@@ -438,12 +426,14 @@ export default function DashboardPage() {
                 </div>
             </header>
 
-            {/* MAIN */}
+            {/* ══════════════════════════════════════════════════════════ */}
+            {/* MAIN CONTENT */}
+            {/* ══════════════════════════════════════════════════════════ */}
             <main className="main-content">
 
-                {/* TASK HERO */}
+                {/* TASK SECTION - con tabs DENTRO */}
                 {activeTask ? (
-                    <div className="task-section">
+                    <section className="task-section">
                         <div className="task-hero">
                             <div className="task-meta">
                                 <div className="task-badge">
@@ -451,7 +441,7 @@ export default function DashboardPage() {
                                     <span>Task Attiva</span>
                                 </div>
                                 <span className="task-chapter">
-                                    Step {activeTask.order_index + 1} di {tasks.length}
+                                    📍 {chapter?.title || 'Capitolo 1'}
                                 </span>
                             </div>
 
@@ -460,91 +450,82 @@ export default function DashboardPage() {
 
                             <div className="task-rewards">
                                 <div className="reward xp">
-                                    +{Math.round(activeTask.xp_reward * stats.streak_multiplier)} XP
+                                    ✨ +{activeTask.xp_reward} XP
                                 </div>
-                                <div className="reward">
-                                    {DIFFICULTY_CONFIG[activeTask.difficulty].label}
+                                <div className="reward difficulty" style={{ '--diff-color': DIFFICULTY_CONFIG[activeTask.difficulty].color } as React.CSSProperties}>
+                                    ⚔️ {DIFFICULTY_CONFIG[activeTask.difficulty].label}
                                 </div>
-                                <div className="reward">
-                                    ~{activeTask.estimated_minutes} min
+                                <div className="reward time">
+                                    ⏱️ ~{activeTask.estimated_minutes} min
                                 </div>
                             </div>
 
                             <div className="task-actions">
                                 <button className="btn btn-complete" onClick={completeTask}>
-                                    HO FINITO
+                                    ✓ HO FINITO
                                 </button>
-                                <button className="btn btn-ghost" onClick={skipTask}>
-                                    Salta
+                                <button className="btn btn-skip" onClick={skipTask}>
+                                    Salta →
                                 </button>
                                 <Link href="/chat" className="btn btn-nur">
-                                    Chiedi a NUR
+                                    💬 Chiedi a NUR
                                 </Link>
                             </div>
                         </div>
 
-                        {/* PANELS */}
+                        {/* TABS - DENTRO la task section */}
                         <div className="panels-tabs">
                             <button
-                                className={`panel-tab ${activePanel === 'desk' ? 'active' : ''}`}
-                                onClick={() => togglePanel('desk')}
+                                className={`panel-tab ${activePanel === 'scrivania' ? 'active' : ''}`}
+                                onClick={() => togglePanel('scrivania')}
                             >
-                                <span className="icon">🗂️</span>
+                                <span>📁</span>
                                 <span>Scrivania</span>
                             </button>
                             <button
                                 className={`panel-tab ${activePanel === 'dashboard' ? 'active' : ''}`}
                                 onClick={() => togglePanel('dashboard')}
                             >
-                                <span className="icon">📊</span>
+                                <span>📊</span>
                                 <span>Dashboard</span>
                             </button>
                             <button
-                                className={`panel-tab ${activePanel === 'notes' ? 'active' : ''}`}
-                                onClick={() => togglePanel('notes')}
+                                className={`panel-tab ${activePanel === 'note' ? 'active' : ''}`}
+                                onClick={() => togglePanel('note')}
                             >
-                                <span className="icon">📝</span>
+                                <span>📝</span>
                                 <span>Note</span>
                             </button>
                         </div>
 
-                        {/* Panel: Scrivania */}
-                        {activePanel === 'desk' && (
+                        {/* PANEL CONTENT */}
+                        {activePanel === 'scrivania' && (
                             <div className="panel-content">
-                                <div className="desk-section">
-                                    <div className="desk-title">Materiali</div>
-                                    <div className="materials-list">
-                                        {materials.length > 0 ? materials.map(m => (
-                                            <Link key={m.id} href="/giornale" className="material-item">
-                                                <div className="material-icon">📄</div>
-                                                <div className="material-info">
-                                                    <div className="material-name">{m.title || 'Senza titolo'}</div>
-                                                    <div className="material-desc">
-                                                        {m.content?.slice(0, 50)}...
-                                                    </div>
-                                                </div>
-                                                <div className="material-action">Apri</div>
-                                            </Link>
-                                        )) : (
-                                            <div className="empty-materials">
-                                                <p>Nessun materiale ancora</p>
-                                                <Link href="/chat" className="btn btn-ghost">
-                                                    Chiedi a NUR
-                                                </Link>
+                                <div className="materials-list">
+                                    {materials.length > 0 ? materials.map(m => (
+                                        <Link key={m.id} href="/giornale" className="material-item">
+                                            <div className="material-icon">📄</div>
+                                            <div className="material-info">
+                                                <div className="material-name">{m.title || 'Senza titolo'}</div>
+                                                <div className="material-desc">{m.content?.slice(0, 50)}...</div>
                                             </div>
-                                        )}
-                                    </div>
+                                        </Link>
+                                    )) : (
+                                        <div className="empty-state">
+                                            <p>Nessun materiale ancora</p>
+                                            <Link href="/chat" className="btn btn-ghost">Chiedi a NUR</Link>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
 
-                        {/* Panel: Dashboard */}
                         {activePanel === 'dashboard' && (
                             <div className="panel-content">
                                 <div className="dash-grid">
                                     <div className="dash-stat">
                                         <div className="dash-stat-label">Task Completate</div>
-                                        <div className="dash-stat-value">{completedTasks}/{tasks.length}</div>
+                                        <div className="dash-stat-value">{completedTasks}/{totalTasks}</div>
                                     </div>
                                     <div className="dash-stat">
                                         <div className="dash-stat-label">XP Totali</div>
@@ -555,15 +536,14 @@ export default function DashboardPage() {
                                         <div className="dash-stat-value">🔥 {stats.streak}</div>
                                     </div>
                                     <div className="dash-stat">
-                                        <div className="dash-stat-label">Moltiplicatore</div>
-                                        <div className="dash-stat-value">x{stats.streak_multiplier}</div>
+                                        <div className="dash-stat-label">Livello</div>
+                                        <div className="dash-stat-value">Lv.{stats.level}</div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Panel: Notes */}
-                        {activePanel === 'notes' && (
+                        {activePanel === 'note' && (
                             <div className="panel-content">
                                 <textarea
                                     className="notes-area"
@@ -571,57 +551,55 @@ export default function DashboardPage() {
                                     value={taskNotes}
                                     onChange={(e) => setTaskNotes(e.target.value)}
                                 />
-                                <div className="notes-actions">
-                                    <button className="btn btn-ghost" onClick={saveNotes}>
-                                        Salva Note
-                                    </button>
-                                </div>
+                                <button className="btn btn-ghost" onClick={saveNotes}>
+                                    Salva Note
+                                </button>
                             </div>
                         )}
-                    </div>
+                    </section>
                 ) : (
-                    <div className="no-task-section">
+                    <section className="no-task-section">
                         <div className="empty-icon">🎯</div>
                         <h2>Nessuna task attiva</h2>
                         <p>Parla con NUR per definire il tuo obiettivo!</p>
                         <Link href="/chat" className="btn btn-nur">
-                            Parla con NUR
+                            💬 Parla con NUR
                         </Link>
-                    </div>
+                    </section>
                 )}
 
+                {/* ══════════════════════════════════════════════════════════ */}
                 {/* CARDS GRID */}
+                {/* ══════════════════════════════════════════════════════════ */}
                 <div className="cards-grid">
 
-                    {/* TASKS CHAIN */}
+                    {/* CHAPTER PROGRESS */}
                     {tasks.length > 0 && (
                         <div className="card">
                             <div className="card-header">
                                 <div>
-                                    <div className="card-label">Percorso</div>
-                                    <div className="card-title">Le tue Task</div>
+                                    <div className="card-label">CAPITOLO 1</div>
+                                    <div className="card-title">{chapter?.title || 'Il tuo percorso'}</div>
                                 </div>
-                                <div className="card-value">{completedTasks}/{tasks.length}</div>
+                                <div className="card-pct">{chapterProgress}%</div>
                             </div>
 
                             <div className="progress-bar">
-                                <div className="progress-bar-fill" style={{ width: `${missionProgress}%` }}></div>
+                                <div className="progress-bar-fill" style={{ width: `${chapterProgress}%` }}></div>
                             </div>
 
-                            <div className="objectives">
+                            <div className="objectives-list">
                                 {tasks.map((task) => (
                                     <div key={task.id} className="obj-item">
-                                        <div className={`obj-check ${
-                                            task.status === 'completed' ? 'done' :
-                                            task.status === 'active' ? 'current' : 'locked'
-                                        }`}>
-                                            {task.status === 'completed' ? '✓' :
-                                             task.status === 'active' ? '●' : '🔒'}
+                                        <div className={`obj-check ${task.displayStatus}`}>
+                                            {task.displayStatus === 'done' && '✓'}
+                                            {task.displayStatus === 'current' && '●'}
+                                            {task.displayStatus === 'locked' && '🔒'}
                                         </div>
-                                        <span className={`obj-text ${task.status}`}>
+                                        <span className={`obj-text ${task.displayStatus}`}>
                                             {task.title}
                                         </span>
-                                        {task.status === 'active' && (
+                                        {task.displayStatus === 'current' && (
                                             <span className="obj-badge">ATTIVA</span>
                                         )}
                                     </div>
@@ -630,66 +608,55 @@ export default function DashboardPage() {
                         </div>
                     )}
 
-                    {/* JOURNEY NODES */}
+                    {/* JOURNEY */}
                     <div className="card">
                         <div className="card-header">
                             <div>
-                                <div className="card-label">Il tuo</div>
+                                <div className="card-label">IL TUO</div>
                                 <div className="card-title">Viaggio</div>
                             </div>
                         </div>
 
                         <div className="journey">
                             <div className="journey-line"></div>
-                            <div
-                                className="journey-fill"
-                                style={{ width: `${Math.min(80, missionProgress * 0.8)}%` }}
-                            ></div>
+                            <div className="journey-fill" style={{ width: `${Math.min(90, chapterProgress * 0.9)}%` }}></div>
 
                             {tasks.slice(0, 4).map((task, i) => (
-                                <div
-                                    key={task.id}
-                                    className={`journey-node ${
-                                        task.status === 'completed' ? 'done' :
-                                        task.status === 'active' ? 'current' : 'locked'
-                                    }`}
-                                >
-                                    {task.status === 'completed' ? '✓' : i + 1}
+                                <div key={task.id} className={`journey-node ${task.displayStatus}`}>
+                                    {task.displayStatus === 'done' ? '✓' : i + 1}
                                 </div>
                             ))}
 
-                            {/* Final objective node */}
-                            <div className={`journey-node ${isObjectiveUnlocked ? 'done' : 'final'}`}>
-                                {isObjectiveUnlocked ? '🏆' : '🎯'}
+                            {/* Destination node */}
+                            <div className={`journey-node destination ${isDestinationUnlocked ? 'unlocked' : 'locked'}`}>
+                                {isDestinationUnlocked ? '🏆' : '🎯'}
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* MISSION CARD */}
+                {/* ══════════════════════════════════════════════════════════ */}
+                {/* DESTINATION CARD */}
+                {/* ══════════════════════════════════════════════════════════ */}
                 {mission && (
-                    <div className={`mission-card ${isObjectiveUnlocked ? 'unlocked' : 'locked'}`}>
+                    <div className={`mission-card ${isDestinationUnlocked ? 'unlocked' : 'locked'}`}>
                         <div className="mission-icon">
-                            {isObjectiveUnlocked ? '🏆' : '🔒'}
+                            {isDestinationUnlocked ? '🏆' : '🎯'}
                         </div>
                         <div className="mission-label">
-                            {isObjectiveUnlocked ? 'OBIETTIVO RAGGIUNTO!' : 'Destinazione Finale'}
+                            {isDestinationUnlocked ? 'OBIETTIVO RAGGIUNTO!' : 'DESTINAZIONE FINALE'}
                         </div>
                         <div className="mission-title">{mission.title}</div>
                         <div className="mission-sub">
-                            {completedTasks} / {tasks.length} task completate
+                            {completedTasks} / {totalTasks} task completate
                         </div>
                         <div className="mission-progress">
-                            <div
-                                className="mission-progress-fill"
-                                style={{ width: `${missionProgress}%` }}
-                            ></div>
+                            <div className="mission-progress-fill" style={{ width: `${chapterProgress}%` }}></div>
                         </div>
-                        <div className="mission-pct">{missionProgress}%</div>
-
-                        {!isObjectiveUnlocked && (
+                        <div className="mission-pct">{chapterProgress}%</div>
+                        {!isDestinationUnlocked && (
                             <div className="mission-hint">
-                                Completa tutte le task per sbloccare!
+                                🔒 Completa tutte le task per sbloccare
                             </div>
                         )}
                     </div>
@@ -697,7 +664,9 @@ export default function DashboardPage() {
 
             </main>
 
-            {/* BOTTOM NAV */}
+            {/* ══════════════════════════════════════════════════════════ */}
+            {/* BOTTOM NAV - 4 ITEMS */}
+            {/* ══════════════════════════════════════════════════════════ */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item active">
                     <span className="nav-icon">📖</span>
@@ -707,13 +676,19 @@ export default function DashboardPage() {
                     <span className="nav-icon">💬</span>
                     <span className="nav-label">NUR</span>
                 </Link>
+                <Link href="/calendario" className="nav-item">
+                    <span className="nav-icon">📅</span>
+                    <span className="nav-label">Calendario</span>
+                </Link>
                 <Link href="/giornale" className="nav-item">
-                    <span className="nav-icon">📚</span>
-                    <span className="nav-label">Scrivania</span>
+                    <span className="nav-icon">📊</span>
+                    <span className="nav-label">Stats</span>
                 </Link>
             </nav>
 
-            {/* MODAL */}
+            {/* ══════════════════════════════════════════════════════════ */}
+            {/* COMPLETION MODAL */}
+            {/* ══════════════════════════════════════════════════════════ */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
