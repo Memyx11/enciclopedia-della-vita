@@ -119,6 +119,7 @@ export default function DashboardPage() {
 
     const loadData = useCallback(async () => {
         if (!user) return
+        console.log('[Dashboard] loadData starting for user:', user.id)
 
         try {
             // 1. Load user stats
@@ -225,16 +226,19 @@ export default function DashboardPage() {
             if (savedNotes) setTaskNotes(savedNotes)
 
         } catch (error) {
-            console.error('Error loading data:', error)
+            console.error('[Dashboard] Error loading data:', error)
         } finally {
+            console.log('[Dashboard] loadData finished, setting loading=false')
             setLoading(false)
         }
     }, [user])
 
     useEffect(() => {
+        console.log('[Dashboard] isLoaded:', isLoaded, 'user:', !!user)
         if (isLoaded && user) {
             loadData()
         } else if (isLoaded && !user) {
+            console.log('[Dashboard] No user, stopping loading')
             setLoading(false)
         }
     }, [isLoaded, user, loadData])
