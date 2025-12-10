@@ -1,449 +1,707 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { UserButton, useUser } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
+import './dashboard.css'
+
+// ═══════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════
+
+interface UserStats {
+    level: number
+    xp: number
+    xp_to_next: number
+    streak: number
+    lives: number
+    rank: string
+    streak_multiplier: number
+}
 
 interface Mission {
     id: string
     title: string
     description: string
-    start_value: number | null
-    target_value: number | null
-    current_value: number | null
-    unit: string | null
-    start_date: string
-    target_date: string | null
-}
-
-interface Objective {
-    id: string
-    title: string
-    level: string
-    status: string
-    progress: number
-    parent_id: string | null
+    target_value: number
+    current_value: number
+    unit: string
+    status: 'active' | 'completed' | 'locked'
 }
 
 interface Task {
     id: string
     title: string
-    description: string | null
-    progress: number
-    parent_title?: string
+    description: string
+    status: 'completed' | 'active' | 'locked'
+    order_index: number
+    xp_reward: number
+    difficulty: 'easy' | 'medium' | 'hard'
+    estimated_minutes: number
 }
 
-// DEMO DATA - Per mostrare come apparirà quando ci sono dati
-const DEMO_MISSION: Mission = {
-    id: 'demo',
-    title: 'Diventare finanziariamente libero',
-    description: 'Uscire dai debiti e costruire ricchezza',
-    start_value: -5000,
-    target_value: 50000,
-    current_value: 8500,
-    unit: 'euro',
-    start_date: '2024-11-15',
-    target_date: '2026-12-31'
+interface JournalEntry {
+    id: string
+    title: string
+    content: string
+    entry_type: string
 }
 
-const DEMO_OBJECTIVES: Objective[] = [
-    { id: '1', title: 'Eliminare debiti carta di credito', level: 'major', status: 'completed', progress: 100, parent_id: null },
-    { id: '2', title: 'Creare un business online', level: 'major', status: 'active', progress: 42, parent_id: null },
-    { id: '2a', title: 'Validare idea di business', level: 'sub', status: 'completed', progress: 100, parent_id: '2' },
-    { id: '2b', title: 'Imparare a vendere', level: 'sub', status: 'active', progress: 60, parent_id: '2' },
-    { id: '2c', title: 'Primi 10 clienti paganti', level: 'sub', status: 'pending', progress: 0, parent_id: '2' },
-    { id: '3', title: 'Costruire fondo emergenza 6 mesi', level: 'major', status: 'pending', progress: 0, parent_id: null },
-    { id: '4', title: 'Investire 20% del reddito', level: 'major', status: 'pending', progress: 0, parent_id: null },
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+
+const RANKS = [
+    { level: 1, name: 'Seme', emoji: '🌱' },
+    { level: 5, name: 'Germoglio', emoji: '🌿' },
+    { level: 10, name: 'Viaggiatore', emoji: '🚶' },
+    { level: 20, name: 'Esploratore', emoji: '🧭' },
+    { level: 30, name: 'Guerriero', emoji: '⚔️' },
+    { level: 40, name: 'Maestro', emoji: '🎓' },
+    { level: 50, name: 'Leggenda', emoji: '👑' },
 ]
 
-const DEMO_TASK: Task = {
-    id: 'task1',
-    title: 'Fare 5 chiamate a freddo oggi',
-    description: 'Usa lo script che hai preparato. Obiettivo: ottenere almeno 1 appuntamento.',
-    progress: 60,
-    parent_title: 'Imparare a vendere'
+const DIFFICULTY_CONFIG: Record<string, { label: string; xp: number; time: number }> = {
+    easy: { label: 'Facile', xp: 30, time: 15 },
+    medium: { label: 'Media', xp: 60, time: 30 },
+    hard: { label: 'Difficile', xp: 100, time: 60 },
 }
+
+function getRank(level: number): { name: string; emoji: string } {
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+        if (level >= RANKS[i].level) return RANKS[i]
+    }
+    return RANKS[0]
+}
+
+function getXpForLevel(level: number): number {
+    return Math.floor(100 * Math.pow(level, 1.5))
+}
+
+function getStreakMultiplier(streak: number): number {
+    if (streak >= 100) return 2.5
+    if (streak >= 30) return 2.0
+    if (streak >= 7) return 1.5
+    return 1.0
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════════════════════════
 
 export default function DashboardPage() {
     const { user, isLoaded } = useUser()
-    const [greeting, setGreeting] = useState('')
+
+    // State
+    const [stats, setStats] = useState<UserStats>({
+        level: 1,
+        xp: 0,
+        xp_to_next: 100,
+        streak: 0,
+        lives: 3,
+        rank: '🌱 Seme',
+        streak_multiplier: 1.0
+    })
     const [mission, setMission] = useState<Mission | null>(null)
-    const [objectives, setObjectives] = useState<Objective[]>([])
-    const [currentTask, setCurrentTask] = useState<Task | null>(null)
+    const [tasks, setTasks] = useState<Task[]>([])
+    const [activeTask, setActiveTask] = useState<Task | null>(null)
+    const [materials, setMaterials] = useState<JournalEntry[]>([])
     const [loading, setLoading] = useState(true)
-    const [useDemo, setUseDemo] = useState(false)
+    const [activePanel, setActivePanel] = useState<string | null>(null)
+    const [taskNotes, setTaskNotes] = useState('')
+    const [showModal, setShowModal] = useState(false)
+    const [modalData, setModalData] = useState({ xp: 0, streak: 0, levelUp: false })
 
-    useEffect(() => {
-        const hour = new Date().getHours()
-        if (hour < 12) setGreeting('Buongiorno')
-        else if (hour < 18) setGreeting('Buon pomeriggio')
-        else setGreeting('Buonasera')
-    }, [])
+    // ═══════════════════════════════════════════════════════════════
+    // DATA LOADING
+    // ═══════════════════════════════════════════════════════════════
 
-    useEffect(() => {
-        if (!user) return
-        loadData()
-    }, [user])
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         if (!user) return
 
         try {
-            // Load mission
+            // 1. Load user stats
+            const { data: statsData } = await supabase
+                .from('user_stats')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .maybeSingle()
+
+            if (statsData) {
+                const level = statsData.level || 1
+                const streak = statsData.streak || 0
+                const rank = getRank(level)
+
+                setStats({
+                    level,
+                    xp: statsData.xp || 0,
+                    xp_to_next: getXpForLevel(level),
+                    streak,
+                    lives: statsData.lives ?? 3,
+                    rank: rank.emoji + ' ' + rank.name,
+                    streak_multiplier: getStreakMultiplier(streak)
+                })
+            }
+
+            // 2. Load active mission (Obiettivo Finale)
             const { data: missionData } = await supabase
                 .from('user_mission')
                 .select('*')
                 .eq('clerk_user_id', user.id)
-                .eq('status', 'active')
+                .in('status', ['active', 'locked'])
+                .order('created_at', { ascending: false })
                 .maybeSingle()
 
             if (missionData) {
                 setMission(missionData)
 
-                // Load objectives
-                const { data: objData } = await supabase
+                // 3. Load tasks for this mission (ordered)
+                const { data: tasksData } = await supabase
                     .from('objectives')
                     .select('*')
                     .eq('clerk_user_id', user.id)
                     .eq('mission_id', missionData.id)
-                    .order('sort_order')
+                    .order('sort_order', { ascending: true })
 
-                if (objData && objData.length > 0) {
-                    setObjectives(objData)
-                }
+                if (tasksData && tasksData.length > 0) {
+                    // Map to our Task interface
+                    const mappedTasks: Task[] = tasksData.map((t: any, index: number) => ({
+                        id: t.id,
+                        title: t.title,
+                        description: t.description || '',
+                        status: t.status as 'completed' | 'active' | 'locked',
+                        order_index: t.sort_order || index,
+                        xp_reward: t.xp_reward || DIFFICULTY_CONFIG[t.difficulty || 'medium'].xp,
+                        difficulty: t.difficulty || 'medium',
+                        estimated_minutes: t.estimated_minutes || DIFFICULTY_CONFIG[t.difficulty || 'medium'].time
+                    }))
 
-                // Load current task
-                const { data: taskData } = await supabase
-                    .from('objectives')
-                    .select('*, parent:parent_id(title)')
-                    .eq('clerk_user_id', user.id)
-                    .eq('status', 'active')
-                    .in('level', ['task', 'micro'])
-                    .limit(1)
-                    .maybeSingle()
-
-                if (taskData) {
-                    setCurrentTask({
-                        ...taskData,
-                        parent_title: (taskData.parent as any)?.title
+                    // Ensure chain logic: only first non-completed is active
+                    let foundActive = false
+                    const chainedTasks = mappedTasks.map(task => {
+                        if (task.status === 'completed') {
+                            return task
+                        } else if (!foundActive) {
+                            foundActive = true
+                            return { ...task, status: 'active' as const }
+                        } else {
+                            return { ...task, status: 'locked' as const }
+                        }
                     })
+
+                    setTasks(chainedTasks)
+
+                    // Set active task
+                    const active = chainedTasks.find(t => t.status === 'active')
+                    setActiveTask(active || null)
+
+                    // Update mission progress
+                    const completedCount = chainedTasks.filter(t => t.status === 'completed').length
+                    setMission(prev => prev ? {
+                        ...prev,
+                        current_value: completedCount,
+                        target_value: chainedTasks.length,
+                        status: completedCount === chainedTasks.length ? 'completed' : 'active'
+                    } : null)
                 }
             }
-        } catch (e) {
-            console.log('No mission data yet')
+
+            // 4. Load materials
+            const { data: materialsData } = await supabase
+                .from('journal_entries')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .in('entry_type', ['guide', 'resource', 'article', 'document'])
+                .order('created_at', { ascending: false })
+                .limit(5)
+
+            if (materialsData) {
+                setMaterials(materialsData)
+            }
+
+            // 5. Load saved notes
+            const savedNotes = localStorage.getItem(`task_notes_${user.id}`)
+            if (savedNotes) setTaskNotes(savedNotes)
+
+        } catch (error) {
+            console.error('Error loading data:', error)
+        } finally {
+            setLoading(false)
+        }
+    }, [user])
+
+    useEffect(() => {
+        if (isLoaded && user) {
+            loadData()
+        } else if (isLoaded && !user) {
+            setLoading(false)
+        }
+    }, [isLoaded, user, loadData])
+
+    // ═══════════════════════════════════════════════════════════════
+    // ACTIONS
+    // ═══════════════════════════════════════════════════════════════
+
+    const completeTask = async () => {
+        if (!user || !activeTask) return
+
+        const xpBase = activeTask.xp_reward
+        const xpWithMultiplier = Math.round(xpBase * stats.streak_multiplier)
+        const newStreak = stats.streak + 1
+
+        try {
+            // 1. Mark task as completed
+            await supabase
+                .from('objectives')
+                .update({
+                    status: 'completed',
+                    progress: 100,
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', activeTask.id)
+
+            // 2. Unlock next task if exists
+            const currentIndex = tasks.findIndex(t => t.id === activeTask.id)
+            if (currentIndex < tasks.length - 1) {
+                const nextTask = tasks[currentIndex + 1]
+                await supabase
+                    .from('objectives')
+                    .update({ status: 'active' })
+                    .eq('id', nextTask.id)
+            }
+
+            // 3. Update user stats
+            const newXp = stats.xp + xpWithMultiplier
+            let newLevel = stats.level
+            let remainingXp = newXp
+            let levelUp = false
+
+            while (remainingXp >= getXpForLevel(newLevel)) {
+                remainingXp -= getXpForLevel(newLevel)
+                newLevel++
+                levelUp = true
+            }
+
+            await supabase
+                .from('user_stats')
+                .upsert({
+                    clerk_user_id: user.id,
+                    level: newLevel,
+                    xp: newXp,
+                    streak: newStreak,
+                    lives: stats.lives,
+                    last_activity: new Date().toISOString()
+                }, { onConflict: 'clerk_user_id' })
+
+            // 4. Check if mission completed
+            const completedCount = tasks.filter(t => t.status === 'completed').length + 1
+            if (mission && completedCount === tasks.length) {
+                await supabase
+                    .from('user_mission')
+                    .update({ status: 'completed', completed_at: new Date().toISOString() })
+                    .eq('id', mission.id)
+            }
+
+            // 5. Show modal
+            setModalData({ xp: xpWithMultiplier, streak: newStreak, levelUp })
+            setShowModal(true)
+
+            // 6. Reload
+            setTimeout(() => loadData(), 500)
+
+        } catch (error) {
+            console.error('Error completing task:', error)
+        }
+    }
+
+    const skipTask = async () => {
+        if (!user || stats.lives <= 0) {
+            alert('Non hai piu vite! Completa una task per continuare.')
+            return
         }
 
-        setLoading(false)
+        if (!confirm('Saltare costa 1 vita e -10 XP. Confermi?')) return
+
+        try {
+            await supabase
+                .from('user_stats')
+                .update({
+                    lives: stats.lives - 1,
+                    xp: Math.max(0, stats.xp - 10),
+                    last_activity: new Date().toISOString()
+                })
+                .eq('clerk_user_id', user.id)
+
+            loadData()
+        } catch (error) {
+            console.error('Error skipping task:', error)
+        }
     }
 
-    const getMissionProgress = (m: Mission) => {
-        if (!m.start_value || !m.target_value || !m.current_value) return 0
-        const total = m.target_value - m.start_value
-        const current = m.current_value - m.start_value
-        return Math.max(0, Math.min(100, Math.round((current / total) * 100)))
+    const saveNotes = () => {
+        if (user) {
+            localStorage.setItem(`task_notes_${user.id}`, taskNotes)
+            alert('Note salvate!')
+        }
     }
 
-    const formatValue = (value: number | null, unit: string | null) => {
-        if (value === null) return '—'
-        const formatted = value.toLocaleString('it-IT')
-        if (unit === 'euro') return `€${formatted}`
-        return `${formatted}${unit ? ` ${unit}` : ''}`
+    const togglePanel = (panel: string) => {
+        setActivePanel(activePanel === panel ? null : panel)
     }
 
-    const getDaysRemaining = (targetDate: string | null) => {
-        if (!targetDate) return null
-        const target = new Date(targetDate)
-        const today = new Date()
-        const diff = target.getTime() - today.getTime()
-        return Math.ceil(diff / (1000 * 60 * 60 * 24))
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // COMPUTED
+    // ═══════════════════════════════════════════════════════════════
 
-    // Usa dati demo o reali
-    const displayMission = useDemo ? DEMO_MISSION : mission
-    const displayObjectives = useDemo ? DEMO_OBJECTIVES : objectives
-    const displayTask = useDemo ? DEMO_TASK : currentTask
+    const xpProgress = Math.round((stats.xp % stats.xp_to_next) / stats.xp_to_next * 100)
+    const completedTasks = tasks.filter(t => t.status === 'completed').length
+    const missionProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0
+    const isObjectiveUnlocked = completedTasks === tasks.length && tasks.length > 0
 
-    if (!isLoaded) return null
+    // ═══════════════════════════════════════════════════════════════
+    // RENDER
+    // ═══════════════════════════════════════════════════════════════
 
-    if (!user) {
+    if (!isLoaded || loading) {
         return (
-            <div className="container">
-                <div className="auth-prompt">
-                    <div className="auth-icon">🎯</div>
-                    <h1>La Tua Dashboard</h1>
-                    <p>Accedi per vedere la tua missione</p>
-                    <Link href="/" className="btn-primary">Vai alla Home</Link>
+            <div className="dashboard-page">
+                <div className="bg-ambient"></div>
+                <div className="loading-state">
+                    <div className="spinner"></div>
+                    <p>Caricamento...</p>
                 </div>
-                <style jsx>{styles}</style>
             </div>
         )
     }
 
-    const userName = user?.firstName || 'Viaggiatore'
-    const progress = displayMission ? getMissionProgress(displayMission) : 0
-    const daysLeft = displayMission ? getDaysRemaining(displayMission.target_date) : null
+    if (!user) {
+        return (
+            <div className="dashboard-page">
+                <div className="bg-ambient"></div>
+                <div className="auth-prompt">
+                    <div className="auth-icon">🎮</div>
+                    <h1>Il Gioco della Vita</h1>
+                    <p>Accedi per iniziare il tuo viaggio</p>
+                    <Link href="/" className="btn-primary">Vai alla Home</Link>
+                </div>
+            </div>
+        )
+    }
 
     return (
-        <div className="container">
-            {/* Background effects */}
-            <div className="bg-gradient"></div>
-            <div className="bg-glow"></div>
+        <div className="dashboard-page">
+            <div className="bg-ambient"></div>
 
-            {/* Header */}
-            <header className="header">
-                <Link href="/" className="back">← Home</Link>
-                <h1 className="header-title">Dashboard</h1>
-                <UserButton afterSignOutUrl="/" />
+            {/* TOP BAR */}
+            <header className="topbar">
+                <div className="topbar-inner">
+                    <div className="player">
+                        <div className="level-badge" style={{ '--progress': xpProgress } as React.CSSProperties}>
+                            <div className="level-ring"></div>
+                            <div className="level-inner">
+                                <span className="level-num">{stats.level}</span>
+                            </div>
+                        </div>
+                        <div className="player-info">
+                            <div className="player-rank">{stats.rank}</div>
+                            <div className="xp-row">
+                                <div className="xp-bar">
+                                    <div className="xp-fill" style={{ width: `${xpProgress}%` }}></div>
+                                </div>
+                                <span className="xp-text">
+                                    {stats.xp.toLocaleString()} / {stats.xp_to_next.toLocaleString()}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="stats-row">
+                        <div className="streak">
+                            <span>🔥</span>
+                            <span>{stats.streak}</span>
+                            {stats.streak_multiplier > 1 && (
+                                <span className="multiplier">x{stats.streak_multiplier}</span>
+                            )}
+                        </div>
+                        <div className="lives">
+                            {[...Array(3)].map((_, i) => (
+                                <span key={i} className={`heart ${i >= stats.lives ? 'dead' : ''}`}>❤️</span>
+                            ))}
+                        </div>
+                        <UserButton afterSignOutUrl="/" />
+                    </div>
+                </div>
             </header>
 
-            <main className="main">
-                {/* Greeting */}
-                <div className="greeting">
-                    <h2>{greeting}, <span className="name">{userName}</span></h2>
-                </div>
+            {/* MAIN */}
+            <main className="main-content">
 
-                {/* Toggle Demo */}
-                {!mission && (
-                    <button 
-                        className="demo-toggle"
-                        onClick={() => setUseDemo(!useDemo)}
-                    >
-                        {useDemo ? '🔴 Nascondi anteprima' : '👀 Mostra anteprima con dati demo'}
-                    </button>
-                )}
-
-                {/* ═══════════════════════════════════════════
-                    MISSIONE PRINCIPALE
-                ═══════════════════════════════════════════ */}
-                <section className="mission-card">
-                    {displayMission ? (
-                        <>
-                            <div className="mission-header">
-                                <span className="mission-badge">🎯 LA TUA MISSIONE</span>
-                                {daysLeft && daysLeft > 0 && (
-                                    <span className="days-badge">{daysLeft} giorni</span>
-                                )}
-                            </div>
-                            
-                            <h3 className="mission-title">{displayMission.title}</h3>
-                            
-                            {displayMission.description && (
-                                <p className="mission-desc">{displayMission.description}</p>
-                            )}
-
-                            {/* Progress Bar Grande */}
-                            <div className="mission-progress">
-                                <div className="progress-track">
-                                    <div 
-                                        className="progress-fill"
-                                        style={{ width: `${progress}%` }}
-                                    >
-                                        <div className="progress-glow"></div>
-                                    </div>
-                                    <div 
-                                        className="progress-marker"
-                                        style={{ left: `${progress}%` }}
-                                    >
-                                        <span className="marker-dot"></span>
-                                    </div>
+                {/* TASK HERO */}
+                {activeTask ? (
+                    <div className="task-section">
+                        <div className="task-hero">
+                            <div className="task-meta">
+                                <div className="task-badge">
+                                    <span className="dot"></span>
+                                    <span>Task Attiva</span>
                                 </div>
-                                
-                                <div className="progress-labels">
-                                    <div className="label-start">
-                                        <span className="label-value">{formatValue(displayMission.start_value, displayMission.unit)}</span>
-                                        <span className="label-text">Partenza</span>
-                                    </div>
-                                    <div className="label-current">
-                                        <span className="label-percent">{progress}%</span>
-                                    </div>
-                                    <div className="label-end">
-                                        <span className="label-value">{formatValue(displayMission.target_value, displayMission.unit)}</span>
-                                        <span className="label-text">Obiettivo</span>
-                                    </div>
+                                <span className="task-chapter">
+                                    Step {activeTask.order_index + 1} di {tasks.length}
+                                </span>
+                            </div>
+
+                            <h1 className="task-title">{activeTask.title}</h1>
+                            <p className="task-desc">{activeTask.description}</p>
+
+                            <div className="task-rewards">
+                                <div className="reward xp">
+                                    +{Math.round(activeTask.xp_reward * stats.streak_multiplier)} XP
                                 </div>
-                            </div>
-
-                            {/* Current Value Highlight */}
-                            <div className="current-value-box">
-                                <span className="current-label">Adesso sei a</span>
-                                <span className="current-value">{formatValue(displayMission.current_value, displayMission.unit)}</span>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-mission">
-                            <div className="empty-icon">🎯</div>
-                            <h3>Qual è la tua missione?</h3>
-                            <p>Parla con NUR per scoprire il tuo vero obiettivo</p>
-                            <Link href="/chat" className="btn-primary">
-                                💬 Parla con NUR
-                            </Link>
-                        </div>
-                    )}
-                </section>
-
-                {/* ═══════════════════════════════════════════
-                    TASK DEL GIORNO
-                ═══════════════════════════════════════════ */}
-                <section className="task-card">
-                    {displayTask ? (
-                        <>
-                            <div className="task-header">
-                                <span className="task-badge">🔥 OGGI</span>
-                                {displayTask.parent_title && (
-                                    <span className="task-parent">📌 {displayTask.parent_title}</span>
-                                )}
-                            </div>
-                            
-                            <h3 className="task-title">{displayTask.title}</h3>
-                            
-                            {displayTask.description && (
-                                <p className="task-desc">{displayTask.description}</p>
-                            )}
-
-                            {/* Task Progress */}
-                            <div className="task-progress">
-                                <div className="task-progress-bar">
-                                    <div 
-                                        className="task-progress-fill"
-                                        style={{ width: `${displayTask.progress}%` }}
-                                    ></div>
+                                <div className="reward">
+                                    {DIFFICULTY_CONFIG[activeTask.difficulty].label}
                                 </div>
-                                <span className="task-percent">{displayTask.progress}%</span>
+                                <div className="reward">
+                                    ~{activeTask.estimated_minutes} min
+                                </div>
                             </div>
 
                             <div className="task-actions">
-                                <button className="btn-success">
-                                    ✅ Completato!
+                                <button className="btn btn-complete" onClick={completeTask}>
+                                    HO FINITO
                                 </button>
-                                <Link href="/chat" className="btn-ghost">
-                                    💬 Ho bisogno di aiuto
+                                <button className="btn btn-ghost" onClick={skipTask}>
+                                    Salta
+                                </button>
+                                <Link href="/chat" className="btn btn-nur">
+                                    Chiedi a NUR
                                 </Link>
                             </div>
-                        </>
-                    ) : (
-                        <div className="empty-task">
-                            <div className="empty-icon">✨</div>
-                            <p>Nessun task attivo</p>
-                            <Link href="/chat" className="btn-secondary">
-                                💬 Chiedi a NUR
-                            </Link>
-                        </div>
-                    )}
-                </section>
-
-                {/* ═══════════════════════════════════════════
-                    IL TUO PIANO - ALBERO OBIETTIVI
-                ═══════════════════════════════════════════ */}
-                {displayMission && displayObjectives.length > 0 && (
-                    <section className="plan-card">
-                        <div className="plan-header">
-                            <span className="plan-badge">📋 IL TUO PIANO</span>
                         </div>
 
-                        <div className="plan-tree">
-                            {displayObjectives
-                                .filter(o => o.level === 'major')
-                                .map((obj, idx) => {
-                                    const children = displayObjectives.filter(o => o.parent_id === obj.id)
-                                    const isLast = idx === displayObjectives.filter(o => o.level === 'major').length - 1
-                                    
-                                    return (
-                                        <div key={obj.id} className="plan-item">
-                                            {/* Connector line */}
-                                            {!isLast && <div className="connector-line"></div>}
-                                            
-                                            {/* Status Circle */}
-                                            <div className={`status-circle ${obj.status}`}>
-                                                {obj.status === 'completed' ? (
-                                                    <span className="check">✓</span>
-                                                ) : (
-                                                    <svg viewBox="0 0 36 36" className="progress-ring">
-                                                        <circle
-                                                            cx="18" cy="18" r="16"
-                                                            fill="none"
-                                                            stroke="rgba(255,255,255,0.1)"
-                                                            strokeWidth="3"
-                                                        />
-                                                        <circle
-                                                            cx="18" cy="18" r="16"
-                                                            fill="none"
-                                                            stroke={obj.status === 'active' ? '#667eea' : 'rgba(255,255,255,0.2)'}
-                                                            strokeWidth="3"
-                                                            strokeDasharray={`${obj.progress}, 100`}
-                                                            strokeLinecap="round"
-                                                            transform="rotate(-90 18 18)"
-                                                        />
-                                                    </svg>
-                                                )}
-                                            </div>
+                        {/* PANELS */}
+                        <div className="panels-tabs">
+                            <button
+                                className={`panel-tab ${activePanel === 'desk' ? 'active' : ''}`}
+                                onClick={() => togglePanel('desk')}
+                            >
+                                <span className="icon">🗂️</span>
+                                <span>Scrivania</span>
+                            </button>
+                            <button
+                                className={`panel-tab ${activePanel === 'dashboard' ? 'active' : ''}`}
+                                onClick={() => togglePanel('dashboard')}
+                            >
+                                <span className="icon">📊</span>
+                                <span>Dashboard</span>
+                            </button>
+                            <button
+                                className={`panel-tab ${activePanel === 'notes' ? 'active' : ''}`}
+                                onClick={() => togglePanel('notes')}
+                            >
+                                <span className="icon">📝</span>
+                                <span>Note</span>
+                            </button>
+                        </div>
 
-                                            {/* Content */}
-                                            <div className="plan-content">
-                                                <div className="plan-main">
-                                                    <span className={`plan-title ${obj.status}`}>
-                                                        {obj.title}
-                                                    </span>
-                                                    {obj.status === 'active' && (
-                                                        <span className="here-badge">← SEI QUI</span>
-                                                    )}
-                                                    {obj.status === 'completed' && (
-                                                        <span className="done-badge">✓</span>
-                                                    )}
-                                                </div>
-                                                
-                                                {obj.status !== 'completed' && (
-                                                    <span className="plan-progress">{obj.progress}%</span>
-                                                )}
-
-                                                {/* Sub-objectives */}
-                                                {children.length > 0 && (
-                                                    <div className="plan-children">
-                                                        {children.map(child => (
-                                                            <div key={child.id} className="plan-child">
-                                                                <span className={`child-dot ${child.status}`}>
-                                                                    {child.status === 'completed' ? '●' : 
-                                                                     child.status === 'active' ? '◐' : '○'}
-                                                                </span>
-                                                                <span className={`child-title ${child.status}`}>
-                                                                    {child.title}
-                                                                </span>
-                                                                {child.status !== 'completed' && (
-                                                                    <span className="child-progress">
-                                                                        {child.progress}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        ))}
+                        {/* Panel: Scrivania */}
+                        {activePanel === 'desk' && (
+                            <div className="panel-content">
+                                <div className="desk-section">
+                                    <div className="desk-title">Materiali</div>
+                                    <div className="materials-list">
+                                        {materials.length > 0 ? materials.map(m => (
+                                            <Link key={m.id} href="/giornale" className="material-item">
+                                                <div className="material-icon">📄</div>
+                                                <div className="material-info">
+                                                    <div className="material-name">{m.title || 'Senza titolo'}</div>
+                                                    <div className="material-desc">
+                                                        {m.content?.slice(0, 50)}...
                                                     </div>
-                                                )}
+                                                </div>
+                                                <div className="material-action">Apri</div>
+                                            </Link>
+                                        )) : (
+                                            <div className="empty-materials">
+                                                <p>Nessun materiale ancora</p>
+                                                <Link href="/chat" className="btn btn-ghost">
+                                                    Chiedi a NUR
+                                                </Link>
                                             </div>
-                                        </div>
-                                    )
-                                })}
-                        </div>
-                    </section>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Panel: Dashboard */}
+                        {activePanel === 'dashboard' && (
+                            <div className="panel-content">
+                                <div className="dash-grid">
+                                    <div className="dash-stat">
+                                        <div className="dash-stat-label">Task Completate</div>
+                                        <div className="dash-stat-value">{completedTasks}/{tasks.length}</div>
+                                    </div>
+                                    <div className="dash-stat">
+                                        <div className="dash-stat-label">XP Totali</div>
+                                        <div className="dash-stat-value">{stats.xp.toLocaleString()}</div>
+                                    </div>
+                                    <div className="dash-stat">
+                                        <div className="dash-stat-label">Streak</div>
+                                        <div className="dash-stat-value">🔥 {stats.streak}</div>
+                                    </div>
+                                    <div className="dash-stat">
+                                        <div className="dash-stat-label">Moltiplicatore</div>
+                                        <div className="dash-stat-value">x{stats.streak_multiplier}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Panel: Notes */}
+                        {activePanel === 'notes' && (
+                            <div className="panel-content">
+                                <textarea
+                                    className="notes-area"
+                                    placeholder="Scrivi qui le tue note per questa task..."
+                                    value={taskNotes}
+                                    onChange={(e) => setTaskNotes(e.target.value)}
+                                />
+                                <div className="notes-actions">
+                                    <button className="btn btn-ghost" onClick={saveNotes}>
+                                        Salva Note
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="no-task-section">
+                        <div className="empty-icon">🎯</div>
+                        <h2>Nessuna task attiva</h2>
+                        <p>Parla con NUR per definire il tuo obiettivo!</p>
+                        <Link href="/chat" className="btn btn-nur">
+                            Parla con NUR
+                        </Link>
+                    </div>
                 )}
 
-                {/* Quick Link to Scrivania */}
-                <Link href="/giornale" className="scrivania-link">
-                    <span className="scrivania-icon">📚</span>
-                    <span className="scrivania-text">Vai alla Scrivania</span>
-                    <span className="scrivania-arrow">→</span>
-                </Link>
+                {/* CARDS GRID */}
+                <div className="cards-grid">
+
+                    {/* TASKS CHAIN */}
+                    {tasks.length > 0 && (
+                        <div className="card">
+                            <div className="card-header">
+                                <div>
+                                    <div className="card-label">Percorso</div>
+                                    <div className="card-title">Le tue Task</div>
+                                </div>
+                                <div className="card-value">{completedTasks}/{tasks.length}</div>
+                            </div>
+
+                            <div className="progress-bar">
+                                <div className="progress-bar-fill" style={{ width: `${missionProgress}%` }}></div>
+                            </div>
+
+                            <div className="objectives">
+                                {tasks.map((task) => (
+                                    <div key={task.id} className="obj-item">
+                                        <div className={`obj-check ${
+                                            task.status === 'completed' ? 'done' :
+                                            task.status === 'active' ? 'current' : 'locked'
+                                        }`}>
+                                            {task.status === 'completed' ? '✓' :
+                                             task.status === 'active' ? '●' : '🔒'}
+                                        </div>
+                                        <span className={`obj-text ${task.status}`}>
+                                            {task.title}
+                                        </span>
+                                        {task.status === 'active' && (
+                                            <span className="obj-badge">ATTIVA</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* JOURNEY NODES */}
+                    <div className="card">
+                        <div className="card-header">
+                            <div>
+                                <div className="card-label">Il tuo</div>
+                                <div className="card-title">Viaggio</div>
+                            </div>
+                        </div>
+
+                        <div className="journey">
+                            <div className="journey-line"></div>
+                            <div
+                                className="journey-fill"
+                                style={{ width: `${Math.min(80, missionProgress * 0.8)}%` }}
+                            ></div>
+
+                            {tasks.slice(0, 4).map((task, i) => (
+                                <div
+                                    key={task.id}
+                                    className={`journey-node ${
+                                        task.status === 'completed' ? 'done' :
+                                        task.status === 'active' ? 'current' : 'locked'
+                                    }`}
+                                >
+                                    {task.status === 'completed' ? '✓' : i + 1}
+                                </div>
+                            ))}
+
+                            {/* Final objective node */}
+                            <div className={`journey-node ${isObjectiveUnlocked ? 'done' : 'final'}`}>
+                                {isObjectiveUnlocked ? '🏆' : '🎯'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* MISSION CARD */}
+                {mission && (
+                    <div className={`mission-card ${isObjectiveUnlocked ? 'unlocked' : 'locked'}`}>
+                        <div className="mission-icon">
+                            {isObjectiveUnlocked ? '🏆' : '🔒'}
+                        </div>
+                        <div className="mission-label">
+                            {isObjectiveUnlocked ? 'OBIETTIVO RAGGIUNTO!' : 'Destinazione Finale'}
+                        </div>
+                        <div className="mission-title">{mission.title}</div>
+                        <div className="mission-sub">
+                            {completedTasks} / {tasks.length} task completate
+                        </div>
+                        <div className="mission-progress">
+                            <div
+                                className="mission-progress-fill"
+                                style={{ width: `${missionProgress}%` }}
+                            ></div>
+                        </div>
+                        <div className="mission-pct">{missionProgress}%</div>
+
+                        {!isObjectiveUnlocked && (
+                            <div className="mission-hint">
+                                Completa tutte le task per sbloccare!
+                            </div>
+                        )}
+                    </div>
+                )}
+
             </main>
 
-            {/* ═══════════════════════════════════════════
-                BOTTOM NAVIGATION
-            ═══════════════════════════════════════════ */}
+            {/* BOTTOM NAV */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item active">
-                    <span className="nav-icon">🏠</span>
-                    <span className="nav-label">Dashboard</span>
+                    <span className="nav-icon">📖</span>
+                    <span className="nav-label">Storia</span>
                 </Link>
                 <Link href="/chat" className="nav-item">
                     <span className="nav-icon">💬</span>
-                    <span className="nav-label">Chat</span>
+                    <span className="nav-label">NUR</span>
                 </Link>
                 <Link href="/giornale" className="nav-item">
                     <span className="nav-icon">📚</span>
@@ -451,769 +709,24 @@ export default function DashboardPage() {
                 </Link>
             </nav>
 
-            <style jsx>{styles}</style>
+            {/* MODAL */}
+            {showModal && (
+                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-emoji">
+                            {modalData.levelUp ? '⬆️' : '🎉'}
+                        </div>
+                        <h2 className="modal-title">
+                            {modalData.levelUp ? 'Level Up!' : 'Task Completata!'}
+                        </h2>
+                        <div className="modal-xp">+{modalData.xp} XP</div>
+                        <div className="modal-streak">🔥 Streak: {modalData.streak} giorni!</div>
+                        <button className="modal-btn" onClick={() => setShowModal(false)}>
+                            Continua
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
-
-const styles = `
-    /* ═══════════════════════════════════════════
-       BASE & BACKGROUND
-    ═══════════════════════════════════════════ */
-    .container {
-        min-height: 100vh;
-        background: #050510;
-        color: #fff;
-        padding-bottom: 100px;
-        position: relative;
-        overflow-x: hidden;
-    }
-
-    .bg-gradient {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: 
-            radial-gradient(ellipse at 30% 20%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
-            radial-gradient(ellipse at 70% 80%, rgba(118, 75, 162, 0.1) 0%, transparent 50%);
-        pointer-events: none;
-        z-index: 0;
-    }
-
-    .bg-glow {
-        position: fixed;
-        top: 100px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 600px;
-        height: 400px;
-        background: radial-gradient(ellipse, rgba(102, 126, 234, 0.08) 0%, transparent 70%);
-        pointer-events: none;
-        z-index: 0;
-    }
-
-    /* ═══════════════════════════════════════════
-       HEADER
-    ═══════════════════════════════════════════ */
-    .header {
-        position: sticky;
-        top: 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 16px 20px;
-        background: rgba(5, 5, 16, 0.9);
-        backdrop-filter: blur(20px);
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-        z-index: 100;
-    }
-
-    .back {
-        color: rgba(255,255,255,0.5);
-        text-decoration: none;
-        font-size: 14px;
-        transition: color 0.2s;
-    }
-
-    .back:hover {
-        color: #fff;
-    }
-
-    .header-title {
-        font-size: 18px;
-        font-weight: 600;
-        color: #fff;
-    }
-
-    /* ═══════════════════════════════════════════
-       MAIN CONTENT
-    ═══════════════════════════════════════════ */
-    .main {
-        position: relative;
-        z-index: 1;
-        padding: 24px 20px;
-        max-width: 600px;
-        margin: 0 auto;
-    }
-
-    .greeting {
-        text-align: center;
-        margin-bottom: 32px;
-    }
-
-    .greeting h2 {
-        font-size: 26px;
-        font-weight: 400;
-        color: rgba(255,255,255,0.9);
-    }
-
-    .greeting .name {
-        color: #667eea;
-        font-weight: 600;
-    }
-
-    .demo-toggle {
-        display: block;
-        width: 100%;
-        padding: 12px;
-        margin-bottom: 20px;
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px dashed rgba(102, 126, 234, 0.3);
-        border-radius: 12px;
-        color: rgba(255,255,255,0.7);
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .demo-toggle:hover {
-        background: rgba(102, 126, 234, 0.2);
-    }
-
-    /* ═══════════════════════════════════════════
-       MISSION CARD
-    ═══════════════════════════════════════════ */
-    .mission-card {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 20px;
-        padding: 24px;
-        margin-bottom: 20px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .mission-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.5), transparent);
-    }
-
-    .mission-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-    }
-
-    .mission-badge {
-        font-size: 11px;
-        font-weight: 700;
-        color: #667eea;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-    }
-
-    .days-badge {
-        font-size: 12px;
-        padding: 4px 12px;
-        background: rgba(255,255,255,0.1);
-        border-radius: 20px;
-        color: rgba(255,255,255,0.7);
-    }
-
-    .mission-title {
-        font-size: 24px;
-        font-weight: 700;
-        color: #fff;
-        margin-bottom: 8px;
-        line-height: 1.3;
-    }
-
-    .mission-desc {
-        font-size: 14px;
-        color: rgba(255,255,255,0.6);
-        margin-bottom: 24px;
-    }
-
-    /* Mission Progress Bar */
-    .mission-progress {
-        margin: 24px 0;
-    }
-
-    .progress-track {
-        position: relative;
-        height: 12px;
-        background: rgba(255,255,255,0.1);
-        border-radius: 6px;
-        overflow: visible;
-    }
-
-    .progress-fill {
-        position: relative;
-        height: 100%;
-        background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
-        border-radius: 6px;
-        transition: width 1s ease-out;
-    }
-
-    .progress-glow {
-        position: absolute;
-        top: -4px;
-        right: -4px;
-        bottom: -4px;
-        width: 20px;
-        background: radial-gradient(ellipse at right, rgba(240, 147, 251, 0.6), transparent);
-        filter: blur(8px);
-    }
-
-    .progress-marker {
-        position: absolute;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 10;
-    }
-
-    .marker-dot {
-        display: block;
-        width: 20px;
-        height: 20px;
-        background: #fff;
-        border-radius: 50%;
-        box-shadow: 0 0 20px rgba(102, 126, 234, 0.8), 0 0 40px rgba(102, 126, 234, 0.4);
-    }
-
-    .progress-labels {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 16px;
-    }
-
-    .label-start, .label-end {
-        text-align: center;
-    }
-
-    .label-start { text-align: left; }
-    .label-end { text-align: right; }
-
-    .label-value {
-        display: block;
-        font-size: 14px;
-        font-weight: 600;
-        color: rgba(255,255,255,0.8);
-    }
-
-    .label-text {
-        font-size: 11px;
-        color: rgba(255,255,255,0.4);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .label-current {
-        text-align: center;
-    }
-
-    .label-percent {
-        font-size: 32px;
-        font-weight: 700;
-        color: #667eea;
-        text-shadow: 0 0 30px rgba(102, 126, 234, 0.5);
-    }
-
-    .current-value-box {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        margin-top: 20px;
-        padding: 16px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 12px;
-    }
-
-    .current-label {
-        font-size: 14px;
-        color: rgba(255,255,255,0.5);
-    }
-
-    .current-value {
-        font-size: 28px;
-        font-weight: 700;
-        color: #51cf66;
-    }
-
-    /* ═══════════════════════════════════════════
-       TASK CARD
-    ═══════════════════════════════════════════ */
-    .task-card {
-        background: linear-gradient(135deg, rgba(255, 146, 43, 0.12) 0%, rgba(255, 107, 107, 0.12) 100%);
-        border: 1px solid rgba(255, 146, 43, 0.25);
-        border-radius: 20px;
-        padding: 24px;
-        margin-bottom: 20px;
-    }
-
-    .task-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
-    }
-
-    .task-badge {
-        font-size: 11px;
-        font-weight: 700;
-        color: #ff922b;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-    }
-
-    .task-parent {
-        font-size: 12px;
-        color: rgba(255,255,255,0.5);
-    }
-
-    .task-title {
-        font-size: 20px;
-        font-weight: 600;
-        color: #fff;
-        margin-bottom: 8px;
-    }
-
-    .task-desc {
-        font-size: 14px;
-        color: rgba(255,255,255,0.6);
-        line-height: 1.5;
-        margin-bottom: 16px;
-    }
-
-    .task-progress {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .task-progress-bar {
-        flex: 1;
-        height: 8px;
-        background: rgba(255,255,255,0.1);
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    .task-progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #ff922b, #ff6b6b);
-        border-radius: 4px;
-        transition: width 0.3s;
-    }
-
-    .task-percent {
-        font-size: 16px;
-        font-weight: 600;
-        color: #ff922b;
-        min-width: 45px;
-    }
-
-    .task-actions {
-        display: flex;
-        gap: 12px;
-    }
-
-    /* ═══════════════════════════════════════════
-       PLAN CARD - ALBERO OBIETTIVI
-    ═══════════════════════════════════════════ */
-    .plan-card {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 20px;
-        padding: 24px;
-        margin-bottom: 20px;
-    }
-
-    .plan-header {
-        margin-bottom: 20px;
-    }
-
-    .plan-badge {
-        font-size: 11px;
-        font-weight: 700;
-        color: rgba(255,255,255,0.5);
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-    }
-
-    .plan-tree {
-        position: relative;
-    }
-
-    .plan-item {
-        display: flex;
-        gap: 16px;
-        padding: 16px 0;
-        position: relative;
-    }
-
-    .connector-line {
-        position: absolute;
-        left: 20px;
-        top: 56px;
-        bottom: -16px;
-        width: 2px;
-        background: rgba(255,255,255,0.1);
-    }
-
-    .status-circle {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        position: relative;
-    }
-
-    .status-circle.completed {
-        background: linear-gradient(135deg, #51cf66, #40c057);
-    }
-
-    .status-circle .check {
-        font-size: 18px;
-        color: #fff;
-        font-weight: 700;
-    }
-
-    .status-circle .progress-ring {
-        width: 40px;
-        height: 40px;
-    }
-
-    .plan-content {
-        flex: 1;
-    }
-
-    .plan-main {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    .plan-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: rgba(255,255,255,0.9);
-    }
-
-    .plan-title.completed {
-        color: rgba(255,255,255,0.5);
-        text-decoration: line-through;
-    }
-
-    .plan-title.pending {
-        color: rgba(255,255,255,0.4);
-    }
-
-    .here-badge {
-        font-size: 11px;
-        font-weight: 700;
-        color: #667eea;
-        padding: 2px 8px;
-        background: rgba(102, 126, 234, 0.2);
-        border-radius: 4px;
-    }
-
-    .done-badge {
-        color: #51cf66;
-    }
-
-    .plan-progress {
-        font-size: 12px;
-        color: rgba(255,255,255,0.4);
-        margin-top: 4px;
-    }
-
-    .plan-children {
-        margin-top: 12px;
-        padding-left: 8px;
-        border-left: 2px solid rgba(255,255,255,0.1);
-    }
-
-    .plan-child {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 0;
-    }
-
-    .child-dot {
-        font-size: 10px;
-    }
-
-    .child-dot.completed { color: #51cf66; }
-    .child-dot.active { color: #667eea; }
-    .child-dot.pending { color: rgba(255,255,255,0.3); }
-
-    .child-title {
-        font-size: 14px;
-        color: rgba(255,255,255,0.7);
-    }
-
-    .child-title.completed {
-        color: rgba(255,255,255,0.4);
-        text-decoration: line-through;
-    }
-
-    .child-progress {
-        font-size: 12px;
-        color: rgba(255,255,255,0.3);
-        margin-left: auto;
-    }
-
-    /* ═══════════════════════════════════════════
-       SCRIVANIA LINK
-    ═══════════════════════════════════════════ */
-    .scrivania-link {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 16px 20px;
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 16px;
-        text-decoration: none;
-        color: rgba(255,255,255,0.7);
-        transition: all 0.2s;
-    }
-
-    .scrivania-link:hover {
-        background: rgba(255,255,255,0.06);
-        border-color: rgba(102, 126, 234, 0.3);
-    }
-
-    .scrivania-icon {
-        font-size: 24px;
-    }
-
-    .scrivania-text {
-        flex: 1;
-        font-size: 15px;
-    }
-
-    .scrivania-arrow {
-        color: rgba(255,255,255,0.3);
-    }
-
-    /* ═══════════════════════════════════════════
-       EMPTY STATES
-    ═══════════════════════════════════════════ */
-    .empty-mission, .empty-task {
-        text-align: center;
-        padding: 32px 16px;
-    }
-
-    .empty-icon {
-        font-size: 48px;
-        margin-bottom: 16px;
-        display: block;
-    }
-
-    .empty-mission h3, .empty-task h3 {
-        font-size: 20px;
-        margin-bottom: 8px;
-    }
-
-    .empty-mission p, .empty-task p {
-        color: rgba(255,255,255,0.5);
-        margin-bottom: 20px;
-    }
-
-    /* ═══════════════════════════════════════════
-       BUTTONS
-    ═══════════════════════════════════════════ */
-    .btn-primary {
-        display: inline-block;
-        padding: 14px 28px;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: #fff;
-        border: none;
-        border-radius: 14px;
-        font-size: 15px;
-        font-weight: 600;
-        text-decoration: none;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-success {
-        flex: 1;
-        padding: 16px;
-        background: linear-gradient(135deg, #51cf66, #40c057);
-        color: #fff;
-        border: none;
-        border-radius: 14px;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-success:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 25px rgba(81, 207, 102, 0.4);
-    }
-
-    .btn-secondary {
-        display: inline-block;
-        padding: 14px 28px;
-        background: rgba(255,255,255,0.1);
-        color: rgba(255,255,255,0.8);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 14px;
-        font-size: 15px;
-        font-weight: 500;
-        text-decoration: none;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .btn-secondary:hover {
-        background: rgba(255,255,255,0.15);
-    }
-
-    .btn-ghost {
-        flex: 1;
-        padding: 16px;
-        background: transparent;
-        color: rgba(255,255,255,0.7);
-        border: 1px solid rgba(255,255,255,0.15);
-        border-radius: 14px;
-        font-size: 14px;
-        text-decoration: none;
-        text-align: center;
-        transition: all 0.2s;
-    }
-
-    .btn-ghost:hover {
-        background: rgba(255,255,255,0.05);
-        border-color: rgba(255,255,255,0.25);
-    }
-
-    /* ═══════════════════════════════════════════
-       BOTTOM NAVIGATION
-    ═══════════════════════════════════════════ */
-    .bottom-nav {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        display: flex;
-        justify-content: space-around;
-        padding: 12px 0;
-        padding-bottom: max(12px, env(safe-area-inset-bottom));
-        background: rgba(5, 5, 16, 0.95);
-        backdrop-filter: blur(20px);
-        border-top: 1px solid rgba(255,255,255,0.08);
-        z-index: 1000;
-    }
-
-    .nav-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        padding: 8px 24px;
-        color: rgba(255,255,255,0.4);
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-
-    .nav-item.active {
-        color: #667eea;
-    }
-
-    .nav-item:hover {
-        color: rgba(255,255,255,0.8);
-    }
-
-    .nav-icon {
-        font-size: 22px;
-    }
-
-    .nav-label {
-        font-size: 11px;
-        font-weight: 500;
-    }
-
-    /* ═══════════════════════════════════════════
-       AUTH PROMPT
-    ═══════════════════════════════════════════ */
-    .auth-prompt {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-        text-align: center;
-        padding: 40px;
-    }
-
-    .auth-icon {
-        font-size: 64px;
-        margin-bottom: 20px;
-    }
-
-    .auth-prompt h1 {
-        font-size: 28px;
-        margin-bottom: 12px;
-    }
-
-    .auth-prompt p {
-        color: rgba(255,255,255,0.5);
-        margin-bottom: 28px;
-    }
-
-    /* ═══════════════════════════════════════════
-       RESPONSIVE
-    ═══════════════════════════════════════════ */
-    @media (max-width: 480px) {
-        .main {
-            padding: 16px;
-        }
-
-        .greeting h2 {
-            font-size: 22px;
-        }
-
-        .mission-title {
-            font-size: 20px;
-        }
-
-        .label-percent {
-            font-size: 28px;
-        }
-
-        .task-actions {
-            flex-direction: column;
-        }
-
-        .status-circle {
-            width: 36px;
-            height: 36px;
-        }
-
-        .status-circle .progress-ring {
-            width: 36px;
-            height: 36px;
-        }
-
-        .connector-line {
-            left: 18px;
-        }
-    }
-`
