@@ -371,6 +371,10 @@ export default function ScrivaniaNURPage() {
                     <span className="nav-icon">💬</span>
                     <span className="nav-label">Chat</span>
                 </Link>
+                <Link href="/obiettivi" className="nav-item">
+                    <span className="nav-icon">🎯</span>
+                    <span className="nav-label">Obiettivi</span>
+                </Link>
                 <Link href="/giornale" className="nav-item active">
                     <span className="nav-icon">📋</span>
                     <span className="nav-label">Scrivania</span>
@@ -378,10 +382,6 @@ export default function ScrivaniaNURPage() {
                 <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🌌</span>
                     <span className="nav-label">Vita</span>
-                </Link>
-                <Link href="/profilo" className="nav-item">
-                    <span className="nav-icon">🏆</span>
-                    <span className="nav-label">Profilo</span>
                 </Link>
             </nav>
         </div>
