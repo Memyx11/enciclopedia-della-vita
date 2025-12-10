@@ -12,103 +12,68 @@ interface JournalEntry {
     title?: string
     content: string
     area_related?: string
-    feed_priority: number
-    is_seen: boolean
-    user_interacted: boolean
     is_pinned: boolean
     created_at: string
     metadata?: Record<string, any>
 }
 
-// Tipi di contenuto che NUR può creare
-const entryTypeConfig: Record<string, { emoji: string; label: string; color: string }> = {
-    'nur_message': { emoji: '💬', label: 'Messaggio', color: '#845ef7' },
-    'resource': { emoji: '📚', label: 'Risorsa', color: '#339af0' },
-    'reminder': { emoji: '🔔', label: 'Promemoria', color: '#ff922b' },
-    'reflection_prompt': { emoji: '🤔', label: 'Riflessione', color: '#cc5de8' },
-    'challenge': { emoji: '🎯', label: 'Sfida', color: '#f783ac' },
-    'celebration': { emoji: '🎉', label: 'Celebrazione', color: '#51cf66' },
-    'quote': { emoji: '💭', label: 'Citazione', color: '#adb5bd' },
-    'weekly_summary': { emoji: '📊', label: 'Riepilogo', color: '#20c997' },
-    'suggestion': { emoji: '✨', label: 'Suggerimento', color: '#339af0' },
-    'achievement': { emoji: '🏆', label: 'Traguardo', color: '#51cf66' },
-    'article': { emoji: '📖', label: 'Articolo', color: '#868e96' },
-    'progress_update': { emoji: '📈', label: 'Progressi', color: '#22b8cf' },
-    'insight': { emoji: '💡', label: 'Insight', color: '#fab005' },
-    // Nuovi tipi per materiale completo
-    'guide': { emoji: '📋', label: 'Guida', color: '#12b886' },
-    'exercise': { emoji: '💪', label: 'Esercizio', color: '#fa5252' },
-    'plan': { emoji: '🗺️', label: 'Piano', color: '#7950f2' }
+// Categorie di materiali
+const MATERIAL_CATEGORIES = {
+    books: { emoji: '📚', label: 'Libri', types: ['book', 'libro'] },
+    articles: { emoji: '📰', label: 'Articoli', types: ['article', 'articolo'] },
+    guides: { emoji: '📋', label: 'Guide', types: ['guide', 'guida'] },
+    docs: { emoji: '📄', label: 'Documenti', types: ['doc', 'document', 'documento'] },
+    videos: { emoji: '🎬', label: 'Video', types: ['video'] },
+    exercises: { emoji: '💪', label: 'Esercizi', types: ['exercise', 'esercizio'] },
+    resources: { emoji: '🔗', label: 'Risorse', types: ['resource', 'risorsa'] },
+    notes: { emoji: '📝', label: 'Note NUR', types: ['nur_message', 'suggestion', 'reminder', 'insight'] }
 }
 
-const areaEmojis: Record<string, string> = {
-    'salute': '💪',
-    'soldi': '💰',
-    'relazioni': '❤️',
-    'lavoro': '💼',
-    'hobby': '🎨',
-    'crescita': '📚',
-    'casa': '🏠',
-    'sociale': '👥',
-    'spirituale': '🧘',
-    'futuro': '🎯'
+const areaConfig: Record<string, { emoji: string; label: string; color: string }> = {
+    'salute': { emoji: '💪', label: 'Salute', color: '#51cf66' },
+    'soldi': { emoji: '💰', label: 'Soldi', color: '#ffd43b' },
+    'relazioni': { emoji: '❤️', label: 'Relazioni', color: '#ff6b6b' },
+    'lavoro': { emoji: '💼', label: 'Lavoro', color: '#339af0' },
+    'hobby': { emoji: '🎨', label: 'Hobby', color: '#cc5de8' },
+    'crescita': { emoji: '📚', label: 'Crescita', color: '#845ef7' },
+    'casa': { emoji: '🏠', label: 'Casa', color: '#20c997' },
+    'sociale': { emoji: '👥', label: 'Sociale', color: '#f783ac' },
+    'spirituale': { emoji: '🧘', label: 'Spirituale', color: '#fab005' },
+    'futuro': { emoji: '🎯', label: 'Futuro', color: '#fd7e14' }
 }
 
-export default function ScrivaniaNURPage() {
+export default function ScrivaniaPage() {
     const { user, isLoaded } = useUser()
     const [entries, setEntries] = useState<JournalEntry[]>([])
     const [loading, setLoading] = useState(true)
-    const [filter, setFilter] = useState<'all' | 'resources' | 'messages' | 'material' | 'pinned'>('all')
+    const [selectedArea, setSelectedArea] = useState<string | null>(null)
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+    const [expandedEntry, setExpandedEntry] = useState<string | null>(null)
 
     const fetchEntries = useCallback(async () => {
         if (!user) return
 
         try {
-            // Escludiamo gli insight automatici - mostriamo solo contenuti creati da NUR intenzionalmente
             const { data, error } = await supabase
                 .from('journal_entries')
                 .select('*')
                 .eq('clerk_user_id', user.id)
-                .not('entry_type', 'eq', 'insight') // Escludi insight automatici
                 .order('is_pinned', { ascending: false })
                 .order('created_at', { ascending: false })
-                .limit(50)
+                .limit(100)
 
             if (error) {
                 console.error('Error fetching journal:', error)
                 return
             }
 
-            console.log('[GIORNALE DEBUG] Raw data from DB:', data?.length, 'entries')
-            console.log('[GIORNALE DEBUG] Entry types:', JSON.stringify(data?.map(e => ({ type: e.entry_type, title: e.title }))))
-            console.log('[GIORNALE DEBUG] Current filter:', filter)
-
-            let filtered = data || []
-
-            // Applica filtri
-            if (filter === 'resources') {
-                filtered = filtered.filter(e =>
-                    ['resource', 'article', 'quote'].includes(e.entry_type)
-                )
-            } else if (filter === 'messages') {
-                filtered = filtered.filter(e =>
-                    ['nur_message', 'reminder', 'reflection_prompt', 'challenge', 'suggestion'].includes(e.entry_type)
-                )
-            } else if (filter === 'material') {
-                filtered = filtered.filter(e =>
-                    ['guide', 'exercise', 'plan', 'suggestion'].includes(e.entry_type) || e.metadata?.is_material
-                )
-            } else if (filter === 'pinned') {
-                filtered = filtered.filter(e => e.is_pinned)
-            }
-
-            setEntries(filtered)
+            setEntries(data || [])
         } catch (error) {
             console.error('Error fetching journal:', error)
         } finally {
             setLoading(false)
         }
-    }, [user, filter])
+    }, [user])
 
     useEffect(() => {
         if (isLoaded && user) {
@@ -120,240 +85,227 @@ export default function ScrivaniaNURPage() {
 
     const togglePin = async (entryId: string) => {
         if (!user) return
-
         const entry = entries.find(e => e.id === entryId)
         if (!entry) return
 
-        try {
-            await supabase
-                .from('journal_entries')
-                .update({ is_pinned: !entry.is_pinned })
-                .eq('id', entryId)
+        await supabase
+            .from('journal_entries')
+            .update({ is_pinned: !entry.is_pinned })
+            .eq('id', entryId)
 
-            setEntries(prev =>
-                prev.map(e => e.id === entryId ? { ...e, is_pinned: !e.is_pinned } : e)
-            )
-        } catch (error) {
-            console.error('Error toggling pin:', error)
-        }
+        setEntries(prev =>
+            prev.map(e => e.id === entryId ? { ...e, is_pinned: !e.is_pinned } : e)
+        )
     }
 
     const deleteEntry = async (entryId: string) => {
-        if (!user || !confirm('Vuoi eliminare questo contenuto?')) return
+        if (!user || !confirm('Eliminare questo contenuto?')) return
 
-        try {
-            await supabase
-                .from('journal_entries')
-                .delete()
-                .eq('id', entryId)
+        await supabase
+            .from('journal_entries')
+            .delete()
+            .eq('id', entryId)
 
-            setEntries(prev => prev.filter(e => e.id !== entryId))
-        } catch (error) {
-            console.error('Error deleting entry:', error)
-        }
+        setEntries(prev => prev.filter(e => e.id !== entryId))
     }
 
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr)
-        const now = new Date()
-        const diffMs = now.getTime() - date.getTime()
-        const diffHours = diffMs / (1000 * 60 * 60)
-        const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    // Raggruppa per area
+    const entriesByArea = entries.reduce((acc, entry) => {
+        const area = entry.area_related || 'generale'
+        if (!acc[area]) acc[area] = []
+        acc[area].push(entry)
+        return acc
+    }, {} as Record<string, JournalEntry[]>)
 
-        if (diffHours < 1) {
-            const mins = Math.floor(diffMs / (1000 * 60))
-            return mins <= 1 ? 'Adesso' : `${mins} min fa`
-        } else if (diffHours < 24) {
-            return `${Math.floor(diffHours)} ore fa`
-        } else if (diffDays < 7) {
-            return `${Math.floor(diffDays)} giorni fa`
-        } else {
-            return date.toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'short'
-            })
+    // Trova la categoria di un entry
+    const getEntryCategory = (entry: JournalEntry): string => {
+        for (const [key, config] of Object.entries(MATERIAL_CATEGORIES)) {
+            if (config.types.includes(entry.entry_type)) {
+                return key
+            }
         }
+        return 'notes'
     }
+
+    // Filtra entries
+    const filteredEntries = entries.filter(entry => {
+        if (selectedArea && entry.area_related !== selectedArea) return false
+        if (selectedCategory) {
+            const cat = getEntryCategory(entry)
+            if (cat !== selectedCategory) return false
+        }
+        return true
+    })
+
+    // Conta per area
+    const areaCounts = Object.entries(entriesByArea).map(([area, items]) => ({
+        area,
+        count: items.length,
+        config: areaConfig[area] || { emoji: '📁', label: area, color: '#868e96' }
+    })).sort((a, b) => b.count - a.count)
 
     if (!isLoaded) return null
 
     if (!user) {
         return (
-            <div className="scrivania-container">
+            <div className="scrivania-page">
                 <div className="bg-gradient"></div>
                 <div className="auth-prompt">
-                    <h1>📋 Scrivania NUR</h1>
-                    <p>Accedi per vedere i contenuti che NUR ha preparato per te</p>
-                    <Link href="/" className="btn btn-primary">
-                        Vai alla Home
-                    </Link>
+                    <div className="auth-icon">📚</div>
+                    <h1>La Tua Scrivania</h1>
+                    <p>Accedi per vedere i materiali che NUR ha raccolto per te</p>
+                    <Link href="/" className="btn-primary">Vai alla Home</Link>
                 </div>
             </div>
         )
     }
 
-    const userName = user?.firstName || user?.emailAddresses[0]?.emailAddress?.split('@')[0] || 'Amico'
-    const pinnedCount = entries.filter(e => e.is_pinned).length
-    const resourcesCount = entries.filter(e => ['resource', 'article', 'quote'].includes(e.entry_type)).length
-
     return (
-        <div className="scrivania-container">
+        <div className="scrivania-page">
             <div className="bg-gradient"></div>
 
+            {/* Header */}
             <header className="scrivania-header">
-                <div className="header-left">
-                    <Link href="/la-mia-vita" className="back-link">← Vita</Link>
-                </div>
-                <div className="header-center">
-                    <span className="header-icon">📋</span>
-                    <h1>Scrivania NUR</h1>
-                </div>
-                <div className="header-right">
-                    <Link href="/chat" className="chat-link">💬</Link>
-                </div>
+                <Link href="/la-mia-vita" className="back-btn">←</Link>
+                <h1>📚 Scrivania</h1>
+                <Link href="/chat" className="chat-btn">💬</Link>
             </header>
 
+            {/* Intro */}
             <div className="scrivania-intro">
-                <p>Ciao {userName}! Qui trovi tutto ciò che ho preparato per te.</p>
+                <p>Materiali che NUR ha selezionato per la tua crescita</p>
             </div>
 
-            {/* Stats rapide */}
-            <div className="quick-stats">
-                <div className="stat-item">
-                    <span className="stat-value">{entries.length}</span>
-                    <span className="stat-label">Contenuti</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-value">{resourcesCount}</span>
-                    <span className="stat-label">Risorse</span>
-                </div>
-                <div className="stat-item">
-                    <span className="stat-value">{pinnedCount}</span>
-                    <span className="stat-label">Salvati</span>
-                </div>
+            {/* Aree della vita - Filtri orizzontali */}
+            <div className="areas-filter">
+                <button
+                    className={`area-chip ${!selectedArea ? 'active' : ''}`}
+                    onClick={() => setSelectedArea(null)}
+                >
+                    Tutto ({entries.length})
+                </button>
+                {areaCounts.map(({ area, count, config }) => (
+                    <button
+                        key={area}
+                        className={`area-chip ${selectedArea === area ? 'active' : ''}`}
+                        onClick={() => setSelectedArea(selectedArea === area ? null : area)}
+                        style={{ '--chip-color': config.color } as React.CSSProperties}
+                    >
+                        {config.emoji} {config.label} ({count})
+                    </button>
+                ))}
             </div>
 
-            {/* Filtri */}
-            <div className="filter-section">
-                <div className="filter-tabs">
-                    <button
-                        className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-                        onClick={() => setFilter('all')}
-                    >
-                        Tutto
-                    </button>
-                    <button
-                        className={`filter-tab ${filter === 'material' ? 'active' : ''}`}
-                        onClick={() => setFilter('material')}
-                    >
-                        📋 Guide
-                    </button>
-                    <button
-                        className={`filter-tab ${filter === 'messages' ? 'active' : ''}`}
-                        onClick={() => setFilter('messages')}
-                    >
-                        💬 Msg
-                    </button>
-                    <button
-                        className={`filter-tab ${filter === 'pinned' ? 'active' : ''}`}
-                        onClick={() => setFilter('pinned')}
-                    >
-                        📌 Salvati
-                    </button>
-                </div>
+            {/* Categorie materiali */}
+            <div className="category-tabs">
+                <button
+                    className={`cat-tab ${!selectedCategory ? 'active' : ''}`}
+                    onClick={() => setSelectedCategory(null)}
+                >
+                    Tutti
+                </button>
+                {Object.entries(MATERIAL_CATEGORIES).map(([key, config]) => {
+                    const count = entries.filter(e => getEntryCategory(e) === key).length
+                    if (count === 0) return null
+                    return (
+                        <button
+                            key={key}
+                            className={`cat-tab ${selectedCategory === key ? 'active' : ''}`}
+                            onClick={() => setSelectedCategory(selectedCategory === key ? null : key)}
+                        >
+                            {config.emoji} {config.label}
+                        </button>
+                    )
+                })}
             </div>
 
-            <main className="scrivania-content">
+            {/* Content */}
+            <main className="scrivania-main">
                 {loading ? (
                     <div className="loading-state">
-                        <div className="loading-spinner"></div>
-                        <p>Carico la tua scrivania...</p>
+                        <div className="spinner"></div>
+                        <p>Carico i tuoi materiali...</p>
                     </div>
-                ) : entries.length === 0 ? (
+                ) : filteredEntries.length === 0 ? (
                     <div className="empty-state">
-                        <div className="empty-icon">📋</div>
-                        <h3>
-                            {filter === 'pinned'
-                                ? 'Nessun contenuto salvato'
-                                : filter === 'resources'
-                                ? 'Nessuna risorsa ancora'
-                                : filter === 'messages'
-                                ? 'Nessun messaggio ancora'
-                                : 'La tua scrivania è vuota'}
-                        </h3>
-                        <p>
-                            Parla con me in chat e ti preparerò contenuti personalizzati!
-                        </p>
-                        <Link href="/chat" className="btn btn-primary">
+                        <div className="empty-icon">📚</div>
+                        <h3>Nessun materiale ancora</h3>
+                        <p>Parla con NUR e ti consiglierà libri, articoli e risorse personalizzate per te!</p>
+                        <Link href="/chat" className="btn-primary">
                             💬 Parla con NUR
                         </Link>
                     </div>
                 ) : (
-                    <div className="entries-grid">
-                        {entries.map(entry => {
-                            const config = entryTypeConfig[entry.entry_type] || {
-                                emoji: '📝',
-                                label: 'Nota',
-                                color: '#868e96'
-                            }
+                    <div className="materials-list">
+                        {filteredEntries.map(entry => {
+                            const category = getEntryCategory(entry)
+                            const catConfig = MATERIAL_CATEGORIES[category as keyof typeof MATERIAL_CATEGORIES]
+                            const areaConf = entry.area_related ? areaConfig[entry.area_related] : null
+                            const isExpanded = expandedEntry === entry.id
 
                             return (
                                 <article
                                     key={entry.id}
-                                    className={`entry-card ${entry.is_pinned ? 'pinned' : ''}`}
-                                    style={{ '--entry-color': config.color } as React.CSSProperties}
+                                    className={`material-card ${entry.is_pinned ? 'pinned' : ''} ${isExpanded ? 'expanded' : ''}`}
+                                    onClick={() => setExpandedEntry(isExpanded ? null : entry.id)}
                                 >
-                                    {entry.is_pinned && <div className="pinned-badge">📌</div>}
-
-                                    <div className="entry-header">
-                                        <div className="entry-type">
-                                            <span className="type-emoji">{config.emoji}</span>
-                                            <span className="type-label">{config.label}</span>
+                                    {/* Header */}
+                                    <div className="material-header">
+                                        <div className="material-type">
+                                            <span className="type-emoji">{catConfig?.emoji || '📝'}</span>
+                                            <span className="type-label">{catConfig?.label || 'Nota'}</span>
                                         </div>
-                                        <span className="entry-time">{formatDate(entry.created_at)}</span>
+                                        {entry.is_pinned && <span className="pin-badge">📌</span>}
+                                        {areaConf && (
+                                            <span
+                                                className="area-tag"
+                                                style={{ background: areaConf.color + '20', color: areaConf.color }}
+                                            >
+                                                {areaConf.emoji} {areaConf.label}
+                                            </span>
+                                        )}
                                     </div>
 
+                                    {/* Title */}
                                     {entry.title && (
-                                        <h3 className="entry-title">{entry.title}</h3>
+                                        <h3 className="material-title">{entry.title}</h3>
                                     )}
 
-                                    <div className={`entry-content ${entry.content.length > 200 ? 'expandable' : ''}`}>
+                                    {/* Content Preview / Full */}
+                                    <div className={`material-content ${isExpanded ? 'full' : 'preview'}`}>
                                         {entry.content.split('\n').map((line, i) => (
                                             <p key={i}>{line}</p>
                                         ))}
                                     </div>
 
-                                    {entry.area_related && (
-                                        <div className="entry-area">
-                                            {areaEmojis[entry.area_related]} {entry.area_related}
-                                        </div>
+                                    {/* Expand hint */}
+                                    {!isExpanded && entry.content.length > 150 && (
+                                        <div className="expand-hint">Tocca per leggere tutto →</div>
                                     )}
 
-                                    <div className="entry-actions">
-                                        <button
-                                            className={`action-btn ${entry.is_pinned ? 'active' : ''}`}
-                                            onClick={() => togglePin(entry.id)}
-                                        >
-                                            {entry.is_pinned ? '📌 Salvato' : '📌 Salva'}
-                                        </button>
-
-                                        {(entry.entry_type === 'challenge' || entry.entry_type === 'reflection_prompt' || entry.entry_type === 'suggestion') && (
+                                    {/* Actions - solo quando espanso */}
+                                    {isExpanded && (
+                                        <div className="material-actions" onClick={e => e.stopPropagation()}>
+                                            <button
+                                                className={`action-btn ${entry.is_pinned ? 'active' : ''}`}
+                                                onClick={() => togglePin(entry.id)}
+                                            >
+                                                {entry.is_pinned ? '📌 Salvato' : '📌 Salva'}
+                                            </button>
                                             <Link
-                                                href={`/chat?context=${encodeURIComponent(`Parliamo di: ${entry.content}`)}`}
+                                                href={`/chat?context=${encodeURIComponent(`Parliamo di: ${entry.title || entry.content.slice(0, 50)}`)}`}
                                                 className="action-btn primary"
                                             >
-                                                💬 Parliamone
+                                                💬 Approfondisci
                                             </Link>
-                                        )}
-
-                                        <button
-                                            className="action-btn delete"
-                                            onClick={() => deleteEntry(entry.id)}
-                                            title="Elimina"
-                                        >
-                                            🗑️
-                                        </button>
-                                    </div>
+                                            <button
+                                                className="action-btn delete"
+                                                onClick={() => deleteEntry(entry.id)}
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    )}
                                 </article>
                             )
                         })}
@@ -361,7 +313,13 @@ export default function ScrivaniaNURPage() {
                 )}
             </main>
 
-            {/* BOTTOM NAV - SOLO 3 VOCI */}
+            {/* Floating button per chiedere materiali */}
+            <Link href="/chat?context=Suggeriscimi%20qualcosa%20da%20leggere" className="fab-suggest">
+                <span>✨</span>
+                <span className="fab-text">Suggeriscimi</span>
+            </Link>
+
+            {/* Bottom Nav */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🏠</span>
