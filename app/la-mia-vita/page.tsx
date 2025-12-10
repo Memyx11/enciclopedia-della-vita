@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { UserButton, useUser } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
+import MissionHero from '@/components/mission/MissionHero'
+import CurrentTask from '@/components/mission/CurrentTask'
 import './la-mia-vita.css'
 
 const areeVita = [
@@ -124,6 +126,12 @@ export default function LaMiaVitaPage() {
                     <h1 className="greeting">{greeting}, <span className="user-name">{userName}</span></h1>
                     <p className="greeting-sub">Come stai oggi?</p>
                 </div>
+
+                {/* MISSIONE PRINCIPALE */}
+                <MissionHero />
+
+                {/* TASK ATTUALE */}
+                <CurrentTask />
 
                 {/* Progresso globale */}
                 <div className="global-progress">

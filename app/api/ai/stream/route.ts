@@ -18,7 +18,10 @@ const ACTION_KEYWORDS = [
     'metti', 'mettimi', 'scrivi', 'scrivimi', 'genera', 'generami',
     'task', 'traguardo', 'traguardi', 'obiettivo', 'obiettivi',
     'contenuto', 'contenuti', 'guida', 'viaggio', 'piano',
-    'registra', 'annota', 'segna', 'inserisci'
+    'registra', 'annota', 'segna', 'inserisci',
+    // Nuovi per sistema missione
+    'missione', 'problema', 'paura', 'desiderio', 'forza', 'debolezza',
+    'insight', 'progress', 'avanzamento'
 ]
 
 function needsSonnet(message: string): boolean {
@@ -51,11 +54,19 @@ Rispondi in italiano.`
 const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Esegui il comando richiesto.
 
 COMANDI DISPONIBILI:
-[TASK:area|titolo] = aggiunge task
-[SAVE:guide|titolo|contenuto] = salva guida/contenuto nella Scrivania
+
+CONTENUTI:
+[SAVE:guide|titolo|contenuto] = salva guida nella Scrivania
 [SAVE:viaggio|titolo|contenuto] = salva piano viaggio
-[GOAL:area|obiettivo] = imposta traguardo
+[TASK:area|titolo] = aggiunge task a un'area
+[GOAL:area|obiettivo] = imposta traguardo area
 [MEMORY:fact|contenuto] = ricorda fatto importante
+
+SISTEMA MISSIONE:
+[INSIGHT:category|content] = salva insight sull'utente (category: problem, desire, fear, strength, weakness, context)
+[MISSION:title|description|why] = imposta missione principale
+[OBJECTIVE:level|parent|title|areas] = crea obiettivo (level: major, sub, task, micro)
+[PROGRESS:objective_id|value] = aggiorna progresso
 
 Aree valide: salute, soldi, relazioni, lavoro, hobby, crescita
 
@@ -64,9 +75,10 @@ ISTRUZIONI:
 2. Usa il comando appropriato con contenuto COMPLETO e UTILE
 3. Conferma brevemente (max 2 frasi)
 
-ESEMPIO:
-User: "salvami una guida per dormire meglio"
-NUR: "Fatto! [SAVE:guide|Guida Sonno|1. Vai a letto alla stessa ora ogni giorno. 2. Evita schermi 1h prima. 3. Camera fresca (18-20°C). 4. No caffè dopo le 15. 5. Routine relax serale.]"
+ESEMPI:
+"salvami una guida sul sonno" → "Fatto! [SAVE:guide|Guida Sonno|1. Orario fisso. 2. No schermi. 3. Camera fresca.]"
+"il mio problema è che non risparmio" → "Capito. [INSIGHT:problem|Non riesce a risparmiare soldi]"
+"la mia missione è diventare libero" → "Fantastico! [MISSION:Libertà finanziaria|Raggiungere indipendenza economica|Per vivere senza stress]"
 
 {USER_CONTEXT}
 
@@ -258,6 +270,132 @@ async function executeActions(text: string, userId: string): Promise<void> {
             console.error('[NUR Action Error] Save:', e)
         }
     }
+
+    // Parse [INSIGHT:category|content] - per salvare insight sull'utente
+    const insightMatch = text.match(/\[INSIGHT:(\w+)\|([^\]]+)\]/)
+    if (insightMatch) {
+        const [, category, content] = insightMatch
+        try {
+            await supabase
+                .from('user_insights')
+                .insert({
+                    clerk_user_id: userId,
+                    category: category.trim(),
+                    content: content.trim(),
+                    importance: 7
+                })
+            console.log(`[NUR Action] Insight salvato: ${category} - ${content}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Insight:', e)
+        }
+    }
+
+    // Parse [MISSION:title|description|why] - per impostare missione principale
+    const missionMatch = text.match(/\[MISSION:([^|]+)\|([^|]+)\|([^\]]+)\]/)
+    if (missionMatch) {
+        const [, title, description, why] = missionMatch
+        try {
+            // Upsert: aggiorna se esiste, crea se non esiste
+            await supabase
+                .from('user_mission')
+                .upsert({
+                    clerk_user_id: userId,
+                    title: title.trim(),
+                    description: description.trim(),
+                    why: why.trim(),
+                    status: 'active',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'clerk_user_id' })
+            console.log(`[NUR Action] Missione impostata: ${title}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Mission:', e)
+        }
+    }
+
+    // Parse [OBJECTIVE:level|parent|title|areas] - per creare obiettivo
+    const objectiveMatch = text.match(/\[OBJECTIVE:(\w+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
+    if (objectiveMatch) {
+        const [, level, parent, title, areasStr] = objectiveMatch
+        try {
+            // Trova mission_id dell'utente
+            const { data: mission } = await supabase
+                .from('user_mission')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .single()
+
+            // Trova parent_id se non è 'mission'
+            let parentId = null
+            if (parent !== 'mission' && parent !== 'null') {
+                const { data: parentObj } = await supabase
+                    .from('objectives')
+                    .select('id')
+                    .eq('clerk_user_id', userId)
+                    .eq('title', parent.trim())
+                    .single()
+                parentId = parentObj?.id
+            }
+
+            const areas = areasStr.split(',').map(a => a.trim())
+
+            await supabase
+                .from('objectives')
+                .insert({
+                    clerk_user_id: userId,
+                    mission_id: mission?.id,
+                    parent_id: parentId,
+                    level: level.trim(),
+                    title: title.trim(),
+                    related_areas: areas,
+                    status: 'pending'
+                })
+            console.log(`[NUR Action] Obiettivo creato: ${title} (${level})`)
+        } catch (e) {
+            console.error('[NUR Action Error] Objective:', e)
+        }
+    }
+
+    // Parse [PROGRESS:objective_title|value] - per aggiornare progresso
+    const progressMatch = text.match(/\[PROGRESS:([^|]+)\|(\d+)\]/)
+    if (progressMatch) {
+        const [, objectiveTitle, value] = progressMatch
+        try {
+            // Trova obiettivo per titolo
+            const { data: objective } = await supabase
+                .from('objectives')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('title', objectiveTitle.trim())
+                .single()
+
+            if (objective) {
+                await supabase
+                    .from('objectives')
+                    .update({
+                        progress: parseInt(value),
+                        current_value: parseInt(value),
+                        status: parseInt(value) >= 100 ? 'completed' : 'active',
+                        completed_at: parseInt(value) >= 100 ? new Date().toISOString() : null,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', objective.id)
+
+                // Salva in storico
+                await supabase
+                    .from('progress_history')
+                    .upsert({
+                        clerk_user_id: userId,
+                        objective_id: objective.id,
+                        date: new Date().toISOString().split('T')[0],
+                        value: parseInt(value)
+                    }, { onConflict: 'objective_id,date' })
+
+                console.log(`[NUR Action] Progresso aggiornato: ${objectiveTitle} → ${value}%`)
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] Progress:', e)
+        }
+    }
 }
 
 // ============================================
@@ -271,6 +409,10 @@ function cleanResponse(text: string): string {
         .replace(/\[MEMORY:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
         .replace(/\[SAVE:[^\]]+\]/g, '')
+        .replace(/\[INSIGHT:[^\]]+\]/g, '')
+        .replace(/\[MISSION:[^\]]+\]/g, '')
+        .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
+        .replace(/\[PROGRESS:[^\]]+\]/g, '')
         .trim()
 }
 
@@ -427,6 +569,10 @@ export async function POST(req: NextRequest) {
                                     .replace(/\[MEMORY:[^\]]+\]/g, '')
                                     .replace(/\[MOOD:[^\]]+\]/g, '')
                                     .replace(/\[SAVE:[^\]]+\]/g, '')
+                                    .replace(/\[INSIGHT:[^\]]+\]/g, '')
+                                    .replace(/\[MISSION:[^\]]+\]/g, '')
+                                    .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
+                                    .replace(/\[PROGRESS:[^\]]+\]/g, '')
 
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
