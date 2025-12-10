@@ -76,15 +76,17 @@ export default function ObiettiviPage() {
 
             <main className="obiettivi-content">
                 {/* Missione in alto */}
-                <MissionHero />
+                <section className="section-box">
+                    <MissionHero />
+                </section>
 
                 {/* Task attuale prominente */}
-                <section className="current-task-section">
+                <section className="section-box">
                     <CurrentTask />
                 </section>
 
                 {/* Albero obiettivi completo */}
-                <section className="objectives-section">
+                <section className="section-box">
                     <ObjectiveTree
                         missionId={mission?.id}
                     />
@@ -217,6 +219,10 @@ const styles = `
         margin: 0 auto;
         position: relative;
         z-index: 1;
+    }
+
+    .section-box {
+        margin-bottom: 20px;
     }
 
     .current-task-section {

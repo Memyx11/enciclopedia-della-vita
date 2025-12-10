@@ -107,7 +107,7 @@ export default function LaMiaVitaPage() {
         <div className="universe-container">
             <div className="bg-gradient"></div>
             <div className="stars"></div>
-            
+
             <header className="universe-header">
                 <div className="logo-section">
                     <Link href="/" className="back-link">← Home</Link>
@@ -122,98 +122,88 @@ export default function LaMiaVitaPage() {
             </header>
 
             <main className="universe-main">
+                {/* Saluto */}
                 <div className="greeting-section">
                     <h1 className="greeting">{greeting}, <span className="user-name">{userName}</span></h1>
                     <p className="greeting-sub">Come stai oggi?</p>
                 </div>
 
-                {/* MISSIONE PRINCIPALE */}
-                <MissionHero />
+                {/* === SEZIONE MISSIONE (sopra i pianeti) === */}
+                <section className="mission-section">
+                    <MissionHero />
+                    <CurrentTask />
+                </section>
 
-                {/* TASK ATTUALE */}
-                <CurrentTask />
-
-                {/* Progresso globale */}
-                <div className="global-progress">
-                    <div className="progress-circle" style={{ '--progress': totalProgress } as React.CSSProperties}>
-                        <span className="progress-value">{totalProgress}%</span>
-                    </div>
-                    <p className="progress-label">Completamento Vita</p>
-                </div>
-
-                <div className="planet-container">
-                    <div className="planet-center">
-                        <div className="center-avatar">
-                            {userName.charAt(0).toUpperCase()}
+                {/* === SEZIONE PIANETI === */}
+                <section className="planets-section">
+                    {/* Progresso globale */}
+                    <div className="global-progress">
+                        <div className="progress-circle" style={{ '--progress': totalProgress } as React.CSSProperties}>
+                            <span className="progress-value">{totalProgress}%</span>
                         </div>
-                        <div className="center-pulse"></div>
+                        <p className="progress-label">Completamento Vita</p>
                     </div>
 
-                    <div className="orbit-ring"></div>
-                    
-                    {areeVita.map((area) => {
-                        const pos = getPositionOnCircle(area.angle, 180)
-                        const isHovered = hoveredArea === area.id
-                        const progress = areasProgress[area.id] || 0
-                        
-                        return (
-                            <Link
-                                key={area.id}
-                                href={`/area/${area.id}`}
-                                className={`area-node ${isHovered ? 'hovered' : ''}`}
-                                style={{
-                                    transform: `translate(${pos.x}px, ${pos.y}px) scale(${isHovered ? 1.2 : 1})`,
-                                    '--area-color': area.color,
-                                    opacity: getAreaOpacity(area.id)
-                                } as React.CSSProperties}
-                                onMouseEnter={() => setHoveredArea(area.id)}
-                                onMouseLeave={() => setHoveredArea(null)}
-                            >
-                                <div className="node-glow"></div>
-                                <div className="node-content">
-                                    <span className="node-emoji">{area.emoji}</span>
-                                    {progress > 0 && (
-                                        <div className="node-progress-ring">
-                                            <svg viewBox="0 0 36 36">
-                                                <path
-                                                    d="M18 2.0845
-                                                    a 15.9155 15.9155 0 0 1 0 31.831
-                                                    a 15.9155 15.9155 0 0 1 0 -31.831"
-                                                    fill="none"
-                                                    stroke={area.color}
-                                                    strokeWidth="2"
-                                                    strokeDasharray={`${progress}, 100`}
-                                                />
-                                            </svg>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="node-label">
-                                    {area.nome}
-                                    {progress > 0 && <span className="node-percent">{progress}%</span>}
-                                </div>
-                            </Link>
-                        )
-                    })}
-                </div>
+                    {/* Orbita pianeti */}
+                    <div className="planet-container">
+                        <div className="planet-center">
+                            <div className="center-avatar">
+                                {userName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="center-pulse"></div>
+                        </div>
+                        <div className="orbit-ring"></div>
 
-                <div className="quick-insight">
-                    <div className="insight-icon">💡</div>
-                    <p className="insight-text">
-                        {totalProgress === 0 
-                            ? 'Clicca su un\'area per iniziare il tuo viaggio. Sono qui per accompagnarti.'
-                            : totalProgress < 30
-                            ? 'Stai iniziando! Ogni piccolo passo conta. Quale area vuoi esplorare oggi?'
-                            : totalProgress < 70
-                            ? 'Ottimo progresso! Continua così. Le aree più opache hanno bisogno di attenzione.'
-                            : 'Wow! Stai facendo un lavoro incredibile su te stesso. 🔥'}
-                    </p>
-                </div>
+                        {areeVita.map((area) => {
+                            const pos = getPositionOnCircle(area.angle, 140)
+                            const isHovered = hoveredArea === area.id
+                            const progress = areasProgress[area.id] || 0
+
+                            return (
+                                <Link
+                                    key={area.id}
+                                    href={`/area/${area.id}`}
+                                    className={`area-node ${isHovered ? 'hovered' : ''}`}
+                                    style={{
+                                        transform: `translate(${pos.x}px, ${pos.y}px) scale(${isHovered ? 1.2 : 1})`,
+                                        '--area-color': area.color,
+                                        opacity: getAreaOpacity(area.id)
+                                    } as React.CSSProperties}
+                                    onMouseEnter={() => setHoveredArea(area.id)}
+                                    onMouseLeave={() => setHoveredArea(null)}
+                                >
+                                    <div className="node-glow"></div>
+                                    <div className="node-content">
+                                        <span className="node-emoji">{area.emoji}</span>
+                                        {progress > 0 && (
+                                            <div className="node-progress-ring">
+                                                <svg viewBox="0 0 36 36">
+                                                    <path
+                                                        d="M18 2.0845
+                                                        a 15.9155 15.9155 0 0 1 0 31.831
+                                                        a 15.9155 15.9155 0 0 1 0 -31.831"
+                                                        fill="none"
+                                                        stroke={area.color}
+                                                        strokeWidth="2"
+                                                        strokeDasharray={`${progress}, 100`}
+                                                    />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="node-label">
+                                        {area.nome}
+                                    </div>
+                                </Link>
+                            )
+                        })}
+                    </div>
+                </section>
 
                 {/* Quick actions */}
                 <div className="quick-actions">
                     <Link href="/chat" className="action-btn primary">
-                        💬 Parla col Coach
+                        💬 Parla con NUR
                     </Link>
                     <Link href="/obiettivi" className="action-btn">
                         🎯 Obiettivi
