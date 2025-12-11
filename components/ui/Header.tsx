@@ -19,7 +19,7 @@ export default function Header() {
             <span className={styles.loading}>...</span>
           ) : isSignedIn ? (
             <>
-              <Link href="/dashboard" className={styles.navLink}>
+              <Link href="/la-mia-vita" className={styles.navLink}>
                 Dashboard
               </Link>
               <Link href="/chat" className={styles.navLink}>
