@@ -6,306 +6,460 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import './giornale.css'
 
-interface JournalEntry {
+// ============================================
+// TYPES
+// ============================================
+
+interface TaskMaterial {
     id: string
-    entry_type: string
-    title?: string
-    content: string
-    area_related?: string
-    is_pinned: boolean
+    objective_id: string | null
+    title: string
+    description: string | null
+    material_type: 'document' | 'link' | 'video' | 'checklist' | 'script' | 'template' | 'note'
+    content: string | null
+    url: string | null
+    icon: string
+    sort_order: number
+    created_by: 'nur' | 'user'
     created_at: string
-    metadata?: Record<string, any>
 }
 
-// Categorie di materiali
-const MATERIAL_CATEGORIES = {
-    books: { emoji: '📚', label: 'Libri', types: ['book', 'libro'] },
-    articles: { emoji: '📰', label: 'Articoli', types: ['article', 'articolo'] },
-    guides: { emoji: '📋', label: 'Guide', types: ['guide', 'guida'] },
-    docs: { emoji: '📄', label: 'Documenti', types: ['doc', 'document', 'documento'] },
-    videos: { emoji: '🎬', label: 'Video', types: ['video'] },
-    exercises: { emoji: '💪', label: 'Esercizi', types: ['exercise', 'esercizio'] },
-    resources: { emoji: '🔗', label: 'Risorse', types: ['resource', 'risorsa'] },
-    notes: { emoji: '📝', label: 'Note NUR', types: ['nur_message', 'suggestion', 'reminder', 'insight'] }
+interface Objective {
+    id: string
+    mission_id: string
+    parent_id: string | null
+    level: 'major' | 'sub' | 'task' | 'micro'
+    title: string
+    description: string | null
+    status: 'pending' | 'active' | 'completed' | 'skipped'
+    progress: number
+    difficulty: string
+    xp_reward: number
 }
 
-const areaConfig: Record<string, { emoji: string; label: string; color: string }> = {
-    'salute': { emoji: '💪', label: 'Salute', color: '#51cf66' },
-    'soldi': { emoji: '💰', label: 'Soldi', color: '#ffd43b' },
-    'relazioni': { emoji: '❤️', label: 'Relazioni', color: '#ff6b6b' },
-    'lavoro': { emoji: '💼', label: 'Lavoro', color: '#339af0' },
-    'hobby': { emoji: '🎨', label: 'Hobby', color: '#cc5de8' },
-    'crescita': { emoji: '📚', label: 'Crescita', color: '#845ef7' },
-    'casa': { emoji: '🏠', label: 'Casa', color: '#20c997' },
-    'sociale': { emoji: '👥', label: 'Sociale', color: '#f783ac' },
-    'spirituale': { emoji: '🧘', label: 'Spirituale', color: '#fab005' },
-    'futuro': { emoji: '🎯', label: 'Futuro', color: '#fd7e14' }
+interface Mission {
+    id: string
+    title: string
+    description: string | null
 }
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const MATERIAL_TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
+    document: { icon: '📄', label: 'Documento', color: '#339af0' },
+    link: { icon: '🔗', label: 'Link', color: '#51cf66' },
+    video: { icon: '🎬', label: 'Video', color: '#ff6b6b' },
+    checklist: { icon: '✅', label: 'Checklist', color: '#fab005' },
+    script: { icon: '📝', label: 'Script', color: '#cc5de8' },
+    template: { icon: '📋', label: 'Template', color: '#20c997' },
+    note: { icon: '💭', label: 'Nota', color: '#845ef7' }
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export default function ScrivaniaPage() {
     const { user, isLoaded } = useUser()
-    const [entries, setEntries] = useState<JournalEntry[]>([])
-    const [loading, setLoading] = useState(true)
-    const [selectedArea, setSelectedArea] = useState<string | null>(null)
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-    const [expandedEntry, setExpandedEntry] = useState<string | null>(null)
 
-    const fetchEntries = useCallback(async () => {
+    // State
+    const [loading, setLoading] = useState(true)
+    const [mission, setMission] = useState<Mission | null>(null)
+    const [activeTask, setActiveTask] = useState<Objective | null>(null)
+    const [activeStep, setActiveStep] = useState<Objective | null>(null)
+    const [materials, setMaterials] = useState<TaskMaterial[]>([])
+    const [allMaterials, setAllMaterials] = useState<TaskMaterial[]>([])
+    const [viewMode, setViewMode] = useState<'task' | 'all'>('task')
+    const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null)
+    const [editingMaterial, setEditingMaterial] = useState<string | null>(null)
+    const [editContent, setEditContent] = useState('')
+
+    // New material form
+    const [showAddForm, setShowAddForm] = useState(false)
+    const [newMaterial, setNewMaterial] = useState({
+        title: '',
+        content: '',
+        url: '',
+        material_type: 'note' as TaskMaterial['material_type']
+    })
+
+    // ============================================
+    // DATA LOADING
+    // ============================================
+
+    const loadData = useCallback(async () => {
         if (!user) return
 
         try {
-            const { data, error } = await supabase
-                .from('journal_entries')
+            // Load mission
+            const { data: missionData } = await supabase
+                .from('user_mission')
                 .select('*')
                 .eq('clerk_user_id', user.id)
-                .order('is_pinned', { ascending: false })
-                .order('created_at', { ascending: false })
-                .limit(100)
+                .eq('status', 'active')
+                .single()
 
-            if (error) {
-                console.error('Error fetching journal:', error)
+            setMission(missionData)
+
+            if (!missionData) {
+                setLoading(false)
                 return
             }
 
-            setEntries(data || [])
+            // Load objectives
+            const { data: objectives } = await supabase
+                .from('objectives')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('mission_id', missionData.id)
+                .order('sort_order')
+
+            const objs = (objectives || []) as Objective[]
+
+            // Find active task using chain logic
+            const chapters = objs.filter(o => o.level === 'major').sort((a, b) => a.progress - b.progress)
+            const activeChapter = chapters.find(c => c.status !== 'completed')
+
+            if (activeChapter) {
+                const steps = objs.filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
+                const step = steps.find(s => s.status !== 'completed')
+                setActiveStep(step || null)
+
+                if (step) {
+                    const tasks = objs.filter(o => o.level === 'task' && o.parent_id === step.id)
+                    const task = tasks.find(t => t.status !== 'completed')
+                    setActiveTask(task || null)
+                }
+            }
+
+            // Load materials for active task
+            if (activeTask?.id) {
+                const { data: taskMaterials } = await supabase
+                    .from('task_materials')
+                    .select('*')
+                    .eq('clerk_user_id', user.id)
+                    .eq('objective_id', activeTask.id)
+                    .order('sort_order')
+
+                setMaterials(taskMaterials || [])
+            }
+
+            // Load all materials
+            const { data: allMats } = await supabase
+                .from('task_materials')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .order('created_at', { ascending: false })
+
+            setAllMaterials(allMats || [])
+
         } catch (error) {
-            console.error('Error fetching journal:', error)
+            console.error('Error loading data:', error)
         } finally {
             setLoading(false)
         }
-    }, [user])
+    }, [user, activeTask?.id])
 
     useEffect(() => {
         if (isLoaded && user) {
-            fetchEntries()
+            loadData()
         } else if (isLoaded && !user) {
             setLoading(false)
         }
-    }, [isLoaded, user, fetchEntries])
+    }, [isLoaded, user, loadData])
 
-    const togglePin = async (entryId: string) => {
-        if (!user) return
-        const entry = entries.find(e => e.id === entryId)
-        if (!entry) return
+    // Reload materials when activeTask changes
+    useEffect(() => {
+        if (activeTask?.id && user) {
+            supabase
+                .from('task_materials')
+                .select('*')
+                .eq('clerk_user_id', user.id)
+                .eq('objective_id', activeTask.id)
+                .order('sort_order')
+                .then(({ data }) => {
+                    setMaterials(data || [])
+                })
+        }
+    }, [activeTask?.id, user])
 
-        await supabase
-            .from('journal_entries')
-            .update({ is_pinned: !entry.is_pinned })
-            .eq('id', entryId)
+    // ============================================
+    // ACTIONS
+    // ============================================
 
-        setEntries(prev =>
-            prev.map(e => e.id === entryId ? { ...e, is_pinned: !e.is_pinned } : e)
-        )
+    const handleAddMaterial = async () => {
+        if (!user || !newMaterial.title.trim()) return
+
+        const { error } = await supabase
+            .from('task_materials')
+            .insert({
+                clerk_user_id: user.id,
+                objective_id: activeTask?.id || null,
+                title: newMaterial.title.trim(),
+                content: newMaterial.content.trim() || null,
+                url: newMaterial.url.trim() || null,
+                material_type: newMaterial.material_type,
+                icon: MATERIAL_TYPE_CONFIG[newMaterial.material_type].icon,
+                created_by: 'user',
+                sort_order: materials.length
+            })
+
+        if (!error) {
+            setNewMaterial({ title: '', content: '', url: '', material_type: 'note' })
+            setShowAddForm(false)
+            loadData()
+        }
     }
 
-    const deleteEntry = async (entryId: string) => {
-        if (!user || !confirm('Eliminare questo contenuto?')) return
+    const handleDeleteMaterial = async (id: string) => {
+        if (!confirm('Eliminare questo materiale?')) return
 
         await supabase
-            .from('journal_entries')
+            .from('task_materials')
             .delete()
-            .eq('id', entryId)
+            .eq('id', id)
 
-        setEntries(prev => prev.filter(e => e.id !== entryId))
+        setMaterials(prev => prev.filter(m => m.id !== id))
+        setAllMaterials(prev => prev.filter(m => m.id !== id))
     }
 
-    // Raggruppa per area
-    const entriesByArea = entries.reduce((acc, entry) => {
-        const area = entry.area_related || 'generale'
-        if (!acc[area]) acc[area] = []
-        acc[area].push(entry)
-        return acc
-    }, {} as Record<string, JournalEntry[]>)
+    const handleUpdateMaterial = async (id: string) => {
+        if (!editContent.trim()) return
 
-    // Trova la categoria di un entry
-    const getEntryCategory = (entry: JournalEntry): string => {
-        for (const [key, config] of Object.entries(MATERIAL_CATEGORIES)) {
-            if (config.types.includes(entry.entry_type)) {
-                return key
-            }
-        }
-        return 'notes'
+        await supabase
+            .from('task_materials')
+            .update({ content: editContent.trim() })
+            .eq('id', id)
+
+        setMaterials(prev => prev.map(m =>
+            m.id === id ? { ...m, content: editContent.trim() } : m
+        ))
+        setAllMaterials(prev => prev.map(m =>
+            m.id === id ? { ...m, content: editContent.trim() } : m
+        ))
+        setEditingMaterial(null)
+        setEditContent('')
     }
 
-    // Filtra entries
-    const filteredEntries = entries.filter(entry => {
-        if (selectedArea && entry.area_related !== selectedArea) return false
-        if (selectedCategory) {
-            const cat = getEntryCategory(entry)
-            if (cat !== selectedCategory) return false
-        }
-        return true
-    })
-
-    // Conta per area
-    const areaCounts = Object.entries(entriesByArea).map(([area, items]) => ({
-        area,
-        count: items.length,
-        config: areaConfig[area] || { emoji: '📁', label: area, color: '#868e96' }
-    })).sort((a, b) => b.count - a.count)
+    // ============================================
+    // RENDER
+    // ============================================
 
     if (!isLoaded) return null
 
     if (!user) {
         return (
             <div className="scrivania-page">
-                <div className="bg-gradient"></div>
-                <div className="auth-prompt">
+                <div className="scrivania-glow"></div>
+                <div className="auth-state">
                     <div className="auth-icon">📚</div>
                     <h1>La Tua Scrivania</h1>
-                    <p>Accedi per vedere i materiali che NUR ha raccolto per te</p>
+                    <p>Accedi per vedere i materiali che NUR ha preparato per te</p>
                     <Link href="/" className="btn-primary">Vai alla Home</Link>
                 </div>
             </div>
         )
     }
 
+    const displayMaterials = viewMode === 'task' ? materials : allMaterials
+
     return (
         <div className="scrivania-page">
-            <div className="bg-gradient"></div>
+            <div className="scrivania-glow"></div>
 
-            {/* Header */}
+            {/* ===== HEADER ===== */}
             <header className="scrivania-header">
-                <Link href="/la-mia-vita" className="back-btn">←</Link>
-                <h1>📚 Scrivania</h1>
-                <Link href="/chat" className="chat-btn">💬</Link>
+                <Link href="/la-mia-vita" className="back-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </Link>
+                <div className="header-title">
+                    <span className="header-icon">📚</span>
+                    <span>Scrivania</span>
+                </div>
+                <Link href="/chat" className="chat-fab">
+                    <span>💬</span>
+                </Link>
             </header>
 
-            {/* Intro */}
-            <div className="scrivania-intro">
-                <p>Materiali che NUR ha selezionato per la tua crescita</p>
-            </div>
+            {/* ===== TASK CONTEXT ===== */}
+            {activeTask && (
+                <div className="task-context">
+                    <div className="context-label">MATERIALI PER</div>
+                    <div className="context-task">
+                        <span className="task-icon">🎯</span>
+                        <span className="task-title">{activeTask.title}</span>
+                    </div>
+                    {activeStep && (
+                        <div className="context-step">
+                            Step: {activeStep.title}
+                        </div>
+                    )}
+                </div>
+            )}
 
-            {/* Aree della vita - Filtri orizzontali */}
-            <div className="areas-filter">
+            {/* ===== VIEW TOGGLE ===== */}
+            <div className="view-toggle">
                 <button
-                    className={`area-chip ${!selectedArea ? 'active' : ''}`}
-                    onClick={() => setSelectedArea(null)}
+                    className={`toggle-btn ${viewMode === 'task' ? 'active' : ''}`}
+                    onClick={() => setViewMode('task')}
                 >
-                    Tutto ({entries.length})
+                    <span>🎯</span>
+                    Task Attuale ({materials.length})
                 </button>
-                {areaCounts.map(({ area, count, config }) => (
-                    <button
-                        key={area}
-                        className={`area-chip ${selectedArea === area ? 'active' : ''}`}
-                        onClick={() => setSelectedArea(selectedArea === area ? null : area)}
-                        style={{ '--chip-color': config.color } as React.CSSProperties}
-                    >
-                        {config.emoji} {config.label} ({count})
-                    </button>
-                ))}
-            </div>
-
-            {/* Categorie materiali */}
-            <div className="category-tabs">
                 <button
-                    className={`cat-tab ${!selectedCategory ? 'active' : ''}`}
-                    onClick={() => setSelectedCategory(null)}
+                    className={`toggle-btn ${viewMode === 'all' ? 'active' : ''}`}
+                    onClick={() => setViewMode('all')}
                 >
-                    Tutti
+                    <span>📁</span>
+                    Tutti ({allMaterials.length})
                 </button>
-                {Object.entries(MATERIAL_CATEGORIES).map(([key, config]) => {
-                    const count = entries.filter(e => getEntryCategory(e) === key).length
-                    if (count === 0) return null
-                    return (
-                        <button
-                            key={key}
-                            className={`cat-tab ${selectedCategory === key ? 'active' : ''}`}
-                            onClick={() => setSelectedCategory(selectedCategory === key ? null : key)}
-                        >
-                            {config.emoji} {config.label}
-                        </button>
-                    )
-                })}
             </div>
 
-            {/* Content */}
+            {/* ===== MAIN CONTENT ===== */}
             <main className="scrivania-main">
                 {loading ? (
                     <div className="loading-state">
                         <div className="spinner"></div>
-                        <p>Carico i tuoi materiali...</p>
+                        <p>Carico i materiali...</p>
                     </div>
-                ) : filteredEntries.length === 0 ? (
+                ) : displayMaterials.length === 0 ? (
                     <div className="empty-state">
-                        <div className="empty-icon">📚</div>
+                        <div className="empty-visual">
+                            <div className="empty-icon">📚</div>
+                            <div className="empty-particles">
+                                <span>✨</span>
+                                <span>📄</span>
+                                <span>🔗</span>
+                            </div>
+                        </div>
                         <h3>Nessun materiale ancora</h3>
-                        <p>Parla con NUR e ti consiglierà libri, articoli e risorse personalizzate per te!</p>
-                        <Link href="/chat" className="btn-primary">
-                            💬 Parla con NUR
-                        </Link>
+                        <p>
+                            {viewMode === 'task'
+                                ? 'NUR aggiungerà qui i materiali per la tua task'
+                                : 'Inizia aggiungendo materiali o parla con NUR'}
+                        </p>
+                        <div className="empty-actions">
+                            <button className="btn-add" onClick={() => setShowAddForm(true)}>
+                                <span>➕</span> Aggiungi materiale
+                            </button>
+                            <Link href="/chat" className="btn-nur">
+                                <span>💬</span> Chiedi a NUR
+                            </Link>
+                        </div>
                     </div>
                 ) : (
-                    <div className="materials-list">
-                        {filteredEntries.map(entry => {
-                            const category = getEntryCategory(entry)
-                            const catConfig = MATERIAL_CATEGORIES[category as keyof typeof MATERIAL_CATEGORIES]
-                            const areaConf = entry.area_related ? areaConfig[entry.area_related] : null
-                            const isExpanded = expandedEntry === entry.id
+                    <div className="materials-grid">
+                        {displayMaterials.map(material => {
+                            const typeConfig = MATERIAL_TYPE_CONFIG[material.material_type] || MATERIAL_TYPE_CONFIG.note
+                            const isExpanded = expandedMaterial === material.id
+                            const isEditing = editingMaterial === material.id
 
                             return (
                                 <article
-                                    key={entry.id}
-                                    className={`material-card ${entry.is_pinned ? 'pinned' : ''} ${isExpanded ? 'expanded' : ''}`}
-                                    onClick={() => setExpandedEntry(isExpanded ? null : entry.id)}
+                                    key={material.id}
+                                    className={`material-card ${isExpanded ? 'expanded' : ''}`}
+                                    onClick={() => !isEditing && setExpandedMaterial(isExpanded ? null : material.id)}
                                 >
-                                    {/* Header */}
-                                    <div className="material-header">
-                                        <div className="material-type">
-                                            <span className="type-emoji">{catConfig?.emoji || '📝'}</span>
-                                            <span className="type-label">{catConfig?.label || 'Nota'}</span>
-                                        </div>
-                                        {entry.is_pinned && <span className="pin-badge">📌</span>}
-                                        {areaConf && (
-                                            <span
-                                                className="area-tag"
-                                                style={{ background: areaConf.color + '20', color: areaConf.color }}
-                                            >
-                                                {areaConf.emoji} {areaConf.label}
-                                            </span>
-                                        )}
+                                    {/* Type Badge */}
+                                    <div
+                                        className="material-type-badge"
+                                        style={{ '--type-color': typeConfig.color } as React.CSSProperties}
+                                    >
+                                        <span>{material.icon || typeConfig.icon}</span>
+                                        <span>{typeConfig.label}</span>
                                     </div>
 
                                     {/* Title */}
-                                    {entry.title && (
-                                        <h3 className="material-title">{entry.title}</h3>
+                                    <h3 className="material-title">{material.title}</h3>
+
+                                    {/* Content */}
+                                    {isEditing ? (
+                                        <div className="edit-area" onClick={e => e.stopPropagation()}>
+                                            <textarea
+                                                value={editContent}
+                                                onChange={e => setEditContent(e.target.value)}
+                                                placeholder="Contenuto..."
+                                                autoFocus
+                                            />
+                                            <div className="edit-actions">
+                                                <button className="btn-save" onClick={() => handleUpdateMaterial(material.id)}>
+                                                    ✓ Salva
+                                                </button>
+                                                <button className="btn-cancel" onClick={() => setEditingMaterial(null)}>
+                                                    ✕ Annulla
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {material.content && (
+                                                <div className={`material-content ${isExpanded ? 'full' : 'preview'}`}>
+                                                    {material.content.split('\n').map((line, i) => (
+                                                        <p key={i}>{line}</p>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* URL */}
+                                            {material.url && (
+                                                <a
+                                                    href={material.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="material-url"
+                                                    onClick={e => e.stopPropagation()}
+                                                >
+                                                    🔗 {new URL(material.url).hostname}
+                                                </a>
+                                            )}
+                                        </>
                                     )}
 
-                                    {/* Content Preview / Full */}
-                                    <div className={`material-content ${isExpanded ? 'full' : 'preview'}`}>
-                                        {entry.content.split('\n').map((line, i) => (
-                                            <p key={i}>{line}</p>
-                                        ))}
-                                    </div>
+                                    {/* Description */}
+                                    {material.description && isExpanded && (
+                                        <p className="material-description">{material.description}</p>
+                                    )}
 
                                     {/* Expand hint */}
-                                    {!isExpanded && entry.content.length > 150 && (
-                                        <div className="expand-hint">Tocca per leggere tutto →</div>
+                                    {!isExpanded && material.content && material.content.length > 100 && (
+                                        <div className="expand-hint">Tocca per espandere</div>
                                     )}
 
-                                    {/* Actions - solo quando espanso */}
-                                    {isExpanded && (
+                                    {/* Actions */}
+                                    {isExpanded && !isEditing && (
                                         <div className="material-actions" onClick={e => e.stopPropagation()}>
                                             <button
-                                                className={`action-btn ${entry.is_pinned ? 'active' : ''}`}
-                                                onClick={() => togglePin(entry.id)}
+                                                className="action-btn edit"
+                                                onClick={() => {
+                                                    setEditingMaterial(material.id)
+                                                    setEditContent(material.content || '')
+                                                }}
                                             >
-                                                {entry.is_pinned ? '📌 Salvato' : '📌 Salva'}
+                                                ✏️ Modifica
                                             </button>
                                             <Link
-                                                href={`/chat?context=${encodeURIComponent(`Parliamo di: ${entry.title || entry.content.slice(0, 50)}`)}`}
-                                                className="action-btn primary"
+                                                href={`/chat?context=${encodeURIComponent(`Parliamo del materiale: ${material.title}`)}`}
+                                                className="action-btn chat"
                                             >
-                                                💬 Approfondisci
+                                                💬 Discuti
                                             </Link>
                                             <button
                                                 className="action-btn delete"
-                                                onClick={() => deleteEntry(entry.id)}
+                                                onClick={() => handleDeleteMaterial(material.id)}
                                             >
                                                 🗑️
                                             </button>
                                         </div>
                                     )}
+
+                                    {/* Source badge */}
+                                    <div className="material-source">
+                                        {material.created_by === 'nur' ? '✨ NUR' : '👤 Tu'}
+                                    </div>
                                 </article>
                             )
                         })}
@@ -313,13 +467,86 @@ export default function ScrivaniaPage() {
                 )}
             </main>
 
-            {/* Floating button per chiedere materiali */}
-            <Link href="/chat?context=Suggeriscimi%20qualcosa%20da%20leggere" className="fab-suggest">
-                <span>✨</span>
-                <span className="fab-text">Suggeriscimi</span>
-            </Link>
+            {/* ===== ADD MATERIAL FORM ===== */}
+            {showAddForm && (
+                <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
+                    <div className="add-modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>➕ Nuovo Materiale</h2>
+                            <button className="close-btn" onClick={() => setShowAddForm(false)}>✕</button>
+                        </div>
 
-            {/* Bottom Nav */}
+                        <div className="form-group">
+                            <label>Tipo</label>
+                            <div className="type-selector">
+                                {Object.entries(MATERIAL_TYPE_CONFIG).map(([key, config]) => (
+                                    <button
+                                        key={key}
+                                        className={`type-option ${newMaterial.material_type === key ? 'active' : ''}`}
+                                        onClick={() => setNewMaterial(prev => ({ ...prev, material_type: key as TaskMaterial['material_type'] }))}
+                                        style={{ '--opt-color': config.color } as React.CSSProperties}
+                                    >
+                                        <span>{config.icon}</span>
+                                        <span>{config.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Titolo *</label>
+                            <input
+                                type="text"
+                                value={newMaterial.title}
+                                onChange={e => setNewMaterial(prev => ({ ...prev, title: e.target.value }))}
+                                placeholder="Es: Guida alla vendita telefonica"
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label>Contenuto</label>
+                            <textarea
+                                value={newMaterial.content}
+                                onChange={e => setNewMaterial(prev => ({ ...prev, content: e.target.value }))}
+                                placeholder="Appunti, note, testo..."
+                                rows={4}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label>URL (opzionale)</label>
+                            <input
+                                type="url"
+                                value={newMaterial.url}
+                                onChange={e => setNewMaterial(prev => ({ ...prev, url: e.target.value }))}
+                                placeholder="https://..."
+                            />
+                        </div>
+
+                        <div className="modal-actions">
+                            <button className="btn-cancel" onClick={() => setShowAddForm(false)}>
+                                Annulla
+                            </button>
+                            <button
+                                className="btn-save"
+                                onClick={handleAddMaterial}
+                                disabled={!newMaterial.title.trim()}
+                            >
+                                ✓ Aggiungi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== FAB ADD ===== */}
+            {!showAddForm && displayMaterials.length > 0 && (
+                <button className="fab-add" onClick={() => setShowAddForm(true)}>
+                    <span>➕</span>
+                </button>
+            )}
+
+            {/* ===== BOTTOM NAV ===== */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🏠</span>
@@ -327,7 +554,7 @@ export default function ScrivaniaPage() {
                 </Link>
                 <Link href="/chat" className="nav-item">
                     <span className="nav-icon">💬</span>
-                    <span className="nav-label">Chat</span>
+                    <span className="nav-label">NUR</span>
                 </Link>
                 <Link href="/giornale" className="nav-item active">
                     <span className="nav-icon">📚</span>

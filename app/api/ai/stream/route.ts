@@ -26,7 +26,10 @@ const ACTION_KEYWORDS = [
     // Per conferme
     'dashboard', 'fallo', 'salvalo', 'ok fallo', 'sì fallo',
     // Per inserimento esplicito
-    'macro', 'nuovo obiettivo', 'nuova missione', 'indipendente', '3000', 'mese'
+    'macro', 'nuovo obiettivo', 'nuova missione', 'indipendente', '3000', 'mese',
+    // Per materiali
+    'materiale', 'materiali', 'script', 'documento', 'link', 'video', 'checklist', 'template',
+    'scrivania', 'risorsa', 'risorse'
 ]
 
 const CONFIRMATION_PATTERNS = [
@@ -121,13 +124,31 @@ TU DEVI rispondere:
 
 Perfetto, tre capitoli solidi. Iniziamo dal primo?"
 
+Utente: "Aggiungi un materiale: script per chiamate a freddo"
+TU DEVI rispondere:
+"Lo aggiungo alla tua scrivania! 📝
+
+[MATERIAL:script|Script Chiamate a Freddo|Saluto + domanda aperta + proposta valore + chiusura appuntamento]
+
+Trovi lo script nella Scrivania. Vuoi che lo espanda con esempi concreti?"
+
 ## COMANDI DISPONIBILI:
 
+### Struttura Missione
 [MISSION:titolo|descrizione|perché] - Crea la missione principale
 [CHAPTER:titolo|descrizione] - Crea un capitolo (macro-obiettivo)
 [STEP:titolo_capitolo|titolo|descrizione] - Crea uno step dentro un capitolo
-[TASK:titolo_step|titolo|descrizione] - Crea una task dentro uno step
-[COMPLETE:titolo] - Marca come completato
+[TASK:titolo_step|titolo|descrizione|difficoltà] - Crea una task (difficoltà: facile/media/difficile/epica)
+
+### Completamento e XP
+[COMPLETE:titolo] - Marca come completato (assegna XP automaticamente)
+[XP:quantità|motivo] - Assegna XP extra manualmente
+
+### Materiali Scrivania
+[MATERIAL:tipo|titolo|contenuto] - Aggiunge materiale (tipi: document/link/video/checklist/script/template/note)
+[MATERIAL:link|titolo|url|descrizione] - Aggiunge un link con descrizione
+
+### Memoria e Insight
 [INSIGHT:tipo|contenuto] - Salva un insight (problem/desire/fear/strength)
 [MEMORY:tipo|contenuto] - Salva una memoria sull'utente
 
@@ -138,7 +159,16 @@ Perfetto, tre capitoli solidi. Iniziamo dal primo?"
 - **CHAPTERS**: Proponi e poi USA [CHAPTER:...] per ogni capitolo
 - **STEPS**: Proponi e poi USA [STEP:...] per ogni step
 - **TASK**: Proponi e poi USA [TASK:...] per la task
-- **ACTIVE**: Supporta, usa [COMPLETE:...] quando finito
+- **ACTIVE**: Supporta, usa [COMPLETE:...] quando finito, [MATERIAL:...] per materiali utili
+
+## SISTEMA XP E DIFFICOLTÀ:
+- facile: 30 XP
+- media: 60 XP
+- difficile: 120 XP
+- epica: 250 XP
+- leggendaria: 500 XP
+
+Quando crei task, assegna una difficoltà appropriata basata sull'impegno richiesto.
 
 ## CONTESTO ATTUALE:
 
@@ -329,11 +359,24 @@ async function executeActions(text: string, userId: string): Promise<void> {
         }
     }
 
-    // Parse [TASK:parent_title|title|description]
-    const taskMatches = text.matchAll(/\[TASK:([^|]+)\|([^|]+)\|([^\]]+)\]/g)
+    // Parse [TASK:parent_title|title|description|difficulty?]
+    const taskMatches = text.matchAll(/\[TASK:([^|]+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
     let taskIndex = 0
+
+    // XP per difficoltà
+    const DIFFICULTY_XP: Record<string, number> = {
+        facile: 30,
+        media: 60,
+        difficile: 120,
+        epica: 250,
+        leggendaria: 500
+    }
+
     for (const match of taskMatches) {
-        const [, parentTitle, title, description] = match
+        const [, parentTitle, title, description, difficulty = 'media'] = match
+        const difficultyNorm = difficulty.toLowerCase().trim()
+        const xpReward = DIFFICULTY_XP[difficultyNorm] || 60
+
         try {
             // Trova parent (step)
             const { data: parent } = await supabase
@@ -359,11 +402,13 @@ async function executeActions(text: string, userId: string): Promise<void> {
                     level: 'task',
                     title: title.trim(),
                     description: description.trim(),
+                    difficulty: difficultyNorm,
+                    xp_reward: xpReward,
                     status: (count || 0) === 0 && taskIndex === 0 ? 'active' : 'pending',
                     progress: 0,
                     sort_order: (count || 0) + taskIndex + 1
                 })
-                console.log(`[NUR Action] Task creata: ${title}`)
+                console.log(`[NUR Action] Task creata: ${title} (${difficultyNorm}, ${xpReward} XP)`)
                 taskIndex++
             }
         } catch (e) {
@@ -447,6 +492,97 @@ async function executeActions(text: string, userId: string): Promise<void> {
         }
     }
 
+    // Parse [MATERIAL:tipo|titolo|contenuto] o [MATERIAL:link|titolo|url|descrizione]
+    const materialMatches = text.matchAll(/\[MATERIAL:([^|]+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
+    for (const match of materialMatches) {
+        const [, materialType, title, contentOrUrl, description] = match
+        const typeNorm = materialType.toLowerCase().trim()
+
+        try {
+            // Trova la task attiva per collegare il materiale
+            const { data: activeTask } = await supabase
+                .from('objectives')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('level', 'task')
+                .eq('status', 'active')
+                .single()
+
+            const materialData: any = {
+                clerk_user_id: userId,
+                objective_id: activeTask?.id || null,
+                title: title.trim(),
+                material_type: typeNorm === 'link' ? 'link' : typeNorm,
+                icon: typeNorm === 'link' ? '🔗' :
+                      typeNorm === 'video' ? '🎬' :
+                      typeNorm === 'checklist' ? '✅' :
+                      typeNorm === 'script' ? '📝' :
+                      typeNorm === 'template' ? '📋' :
+                      typeNorm === 'document' ? '📄' : '💭',
+                created_by: 'nur',
+                sort_order: 0
+            }
+
+            // Se è un link, content è l'URL e description è la descrizione
+            if (typeNorm === 'link') {
+                materialData.url = contentOrUrl.trim()
+                materialData.description = description?.trim() || null
+            } else {
+                materialData.content = contentOrUrl.trim()
+                materialData.description = description?.trim() || null
+            }
+
+            await supabase.from('task_materials').insert(materialData)
+            console.log(`[NUR Action] Materiale aggiunto: ${title} (${typeNorm})`)
+        } catch (e) {
+            console.error('[NUR Action Error] Material:', e)
+        }
+    }
+
+    // Parse [XP:quantità|motivo]
+    const xpMatch = text.match(/\[XP:(\d+)\|([^\]]+)\]/)
+    if (xpMatch) {
+        const [, amount, reason] = xpMatch
+        try {
+            // Usa la funzione SQL add_xp se esiste, altrimenti aggiorna direttamente
+            const { data: result } = await supabase.rpc('add_xp', {
+                p_clerk_user_id: userId,
+                p_amount: parseInt(amount),
+                p_reason: reason.trim(),
+                p_objective_id: null
+            })
+
+            if (result?.success) {
+                console.log(`[NUR Action] XP assegnati: +${result.xp_gained} (${reason})`)
+            } else {
+                // Fallback: aggiorna direttamente
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('xp, level')
+                    .eq('clerk_user_id', userId)
+                    .single()
+
+                if (profile) {
+                    const newXp = (profile.xp || 0) + parseInt(amount)
+                    await supabase
+                        .from('profiles')
+                        .update({ xp: newXp })
+                        .eq('clerk_user_id', userId)
+
+                    // Registra nello storico
+                    await supabase.from('xp_history').insert({
+                        clerk_user_id: userId,
+                        amount: parseInt(amount),
+                        reason: reason.trim()
+                    })
+                    console.log(`[NUR Action] XP assegnati (fallback): +${amount} (${reason})`)
+                }
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] XP:', e)
+        }
+    }
+
     // Legacy: Parse [OBJECTIVE:level|parent|title|areas]
     const objectiveMatch = text.match(/\[OBJECTIVE:(\w+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
     if (objectiveMatch) {
@@ -502,6 +638,8 @@ function cleanResponse(text: string): string {
         .replace(/\[PROGRESS:[^\]]+\]/g, '')
         .replace(/\[SAVE:[^\]]+\]/g, '')
         .replace(/\[MEMORY:[^\]]+\]/g, '')
+        .replace(/\[MATERIAL:[^\]]+\]/g, '')
+        .replace(/\[XP:[^\]]+\]/g, '')
         .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
         .replace(/\[GOAL:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
