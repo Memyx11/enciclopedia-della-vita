@@ -5,74 +5,105 @@ import Link from 'next/link'
 import { UserButton, useUser } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
 
+// ============================================
+// TYPES
+// ============================================
+
 interface Mission {
     id: string
     title: string
-    description: string
-    start_value: number | null
-    target_value: number | null
-    current_value: number | null
-    unit: string | null
-    start_date: string
-    target_date: string | null
+    description: string | null
+    why: string | null
 }
 
 interface Objective {
     id: string
-    title: string
-    level: string
-    status: string
-    progress: number
+    mission_id: string
     parent_id: string | null
-}
-
-interface Task {
-    id: string
+    level: 'major' | 'sub' | 'task'
     title: string
     description: string | null
+    status: 'pending' | 'active' | 'completed' | 'skipped'
     progress: number
-    parent_title?: string
+    sort_order: number
 }
 
-// DEMO DATA - Per mostrare come apparirà quando ci sono dati
-const DEMO_MISSION: Mission = {
-    id: 'demo',
-    title: 'Diventare finanziariamente libero',
-    description: 'Uscire dai debiti e costruire ricchezza',
-    start_value: -5000,
-    target_value: 50000,
-    current_value: 8500,
-    unit: 'euro',
-    start_date: '2024-11-15',
-    target_date: '2026-12-31'
+interface ChainState {
+    activeChapter: string | null
+    activeStep: string | null
+    activeTask: string | null
 }
 
-const DEMO_OBJECTIVES: Objective[] = [
-    { id: '1', title: 'Eliminare debiti carta di credito', level: 'major', status: 'completed', progress: 100, parent_id: null },
-    { id: '2', title: 'Creare un business online', level: 'major', status: 'active', progress: 42, parent_id: null },
-    { id: '2a', title: 'Validare idea di business', level: 'sub', status: 'completed', progress: 100, parent_id: '2' },
-    { id: '2b', title: 'Imparare a vendere', level: 'sub', status: 'active', progress: 60, parent_id: '2' },
-    { id: '2c', title: 'Primi 10 clienti paganti', level: 'sub', status: 'pending', progress: 0, parent_id: '2' },
-    { id: '3', title: 'Costruire fondo emergenza 6 mesi', level: 'major', status: 'pending', progress: 0, parent_id: null },
-    { id: '4', title: 'Investire 20% del reddito', level: 'major', status: 'pending', progress: 0, parent_id: null },
-]
+type DashboardPhase = 'empty' | 'mission_only' | 'has_chapters' | 'has_steps' | 'complete'
 
-const DEMO_TASK: Task = {
-    id: 'task1',
-    title: 'Fare 5 chiamate a freddo oggi',
-    description: 'Usa lo script che hai preparato. Obiettivo: ottenere almeno 1 appuntamento.',
-    progress: 60,
-    parent_title: 'Imparare a vendere'
+// ============================================
+// CHAIN LOGIC
+// ============================================
+
+function calculateChain(objectives: Objective[]): ChainState {
+    const chapters = objectives
+        .filter(o => o.level === 'major')
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeChapter = chapters.find(c => c.status !== 'completed')
+    if (!activeChapter) return { activeChapter: null, activeStep: null, activeTask: null }
+
+    const steps = objectives
+        .filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeStep = steps.find(s => s.status !== 'completed')
+    if (!activeStep) return { activeChapter: activeChapter.id, activeStep: null, activeTask: null }
+
+    const tasks = objectives
+        .filter(o => o.level === 'task' && o.parent_id === activeStep.id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeTask = tasks.find(t => t.status !== 'completed')
+
+    return {
+        activeChapter: activeChapter.id,
+        activeStep: activeStep.id,
+        activeTask: activeTask?.id || null
+    }
 }
+
+function getDisplayState(obj: Objective, chain: ChainState): 'done' | 'current' | 'locked' {
+    if (obj.status === 'completed') return 'done'
+    const isActive = obj.id === chain.activeChapter || obj.id === chain.activeStep || obj.id === chain.activeTask
+    return isActive ? 'current' : 'locked'
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export default function DashboardPage() {
     const { user, isLoaded } = useUser()
     const [greeting, setGreeting] = useState('')
+    const [loading, setLoading] = useState(true)
+
+    // Data
     const [mission, setMission] = useState<Mission | null>(null)
     const [objectives, setObjectives] = useState<Objective[]>([])
-    const [currentTask, setCurrentTask] = useState<Task | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [useDemo, setUseDemo] = useState(false)
+    const [chain, setChain] = useState<ChainState>({ activeChapter: null, activeStep: null, activeTask: null })
+    const [phase, setPhase] = useState<DashboardPhase>('empty')
+
+    // Computed
+    const chapters = objectives.filter(o => o.level === 'major')
+    const completedChapters = chapters.filter(c => c.status === 'completed').length
+    const missionProgress = chapters.length > 0 ? Math.round((completedChapters / chapters.length) * 100) : 0
+
+    const activeChapter = objectives.find(o => o.id === chain.activeChapter)
+    const activeStep = objectives.find(o => o.id === chain.activeStep)
+    const activeTask = objectives.find(o => o.id === chain.activeTask)
+
+    const stepsInChapter = activeChapter
+        ? objectives.filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
+        : []
+    const currentStepIndex = activeStep
+        ? stepsInChapter.findIndex(s => s.id === activeStep.id) + 1
+        : 0
 
     useEffect(() => {
         const hour = new Date().getHours()
@@ -82,8 +113,7 @@ export default function DashboardPage() {
     }, [])
 
     useEffect(() => {
-        if (!user) return
-        loadData()
+        if (user) loadData()
     }, [user])
 
     const loadData = async () => {
@@ -109,60 +139,58 @@ export default function DashboardPage() {
                     .eq('mission_id', missionData.id)
                     .order('sort_order')
 
-                if (objData && objData.length > 0) {
-                    setObjectives(objData)
-                }
+                const objs = (objData || []) as Objective[]
+                setObjectives(objs)
 
-                // Load current task
-                const { data: taskData } = await supabase
-                    .from('objectives')
-                    .select('*, parent:parent_id(title)')
-                    .eq('clerk_user_id', user.id)
-                    .eq('status', 'active')
-                    .in('level', ['task', 'micro'])
-                    .limit(1)
-                    .single()
+                // Calculate chain
+                const chainState = calculateChain(objs)
+                setChain(chainState)
 
-                if (taskData) {
-                    setCurrentTask({
-                        ...taskData,
-                        parent_title: (taskData.parent as any)?.title
-                    })
+                // Determine phase
+                const chaps = objs.filter(o => o.level === 'major')
+                const hasSteps = objs.some(o => o.level === 'sub')
+                const hasTasks = objs.some(o => o.level === 'task')
+
+                if (chaps.length === 0) {
+                    setPhase('mission_only')
+                } else if (!hasSteps) {
+                    setPhase('has_chapters')
+                } else if (!hasTasks) {
+                    setPhase('has_steps')
+                } else {
+                    setPhase('complete')
                 }
+            } else {
+                setPhase('empty')
             }
         } catch (e) {
             console.log('No mission data yet')
+            setPhase('empty')
         }
 
         setLoading(false)
     }
 
-    const getMissionProgress = (m: Mission) => {
-        if (!m.start_value || !m.target_value || !m.current_value) return 0
-        const total = m.target_value - m.start_value
-        const current = m.current_value - m.start_value
-        return Math.max(0, Math.min(100, Math.round((current / total) * 100)))
-    }
+    const handleCompleteTask = async () => {
+        if (!activeTask || !user) return
 
-    const formatValue = (value: number | null, unit: string | null) => {
-        if (value === null) return '—'
-        const formatted = value.toLocaleString('it-IT')
-        if (unit === 'euro') return `€${formatted}`
-        return `${formatted}${unit ? ` ${unit}` : ''}`
-    }
+        try {
+            // Mark task as completed
+            await supabase
+                .from('objectives')
+                .update({
+                    status: 'completed',
+                    progress: 100,
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', activeTask.id)
 
-    const getDaysRemaining = (targetDate: string | null) => {
-        if (!targetDate) return null
-        const target = new Date(targetDate)
-        const today = new Date()
-        const diff = target.getTime() - today.getTime()
-        return Math.ceil(diff / (1000 * 60 * 60 * 24))
+            // Reload data
+            await loadData()
+        } catch (e) {
+            console.error('Error completing task:', e)
+        }
     }
-
-    // Usa dati demo o reali
-    const displayMission = useDemo ? DEMO_MISSION : mission
-    const displayObjectives = useDemo ? DEMO_OBJECTIVES : objectives
-    const displayTask = useDemo ? DEMO_TASK : currentTask
 
     if (!isLoaded) return null
 
@@ -181,12 +209,9 @@ export default function DashboardPage() {
     }
 
     const userName = user?.firstName || 'Viaggiatore'
-    const progress = displayMission ? getMissionProgress(displayMission) : 0
-    const daysLeft = displayMission ? getDaysRemaining(displayMission.target_date) : null
 
     return (
         <div className="container">
-            {/* Background effects */}
             <div className="bg-gradient"></div>
             <div className="bg-glow"></div>
 
@@ -203,226 +228,162 @@ export default function DashboardPage() {
                     <h2>{greeting}, <span className="name">{userName}</span></h2>
                 </div>
 
-                {/* Toggle Demo */}
-                {!mission && (
-                    <button 
-                        className="demo-toggle"
-                        onClick={() => setUseDemo(!useDemo)}
-                    >
-                        {useDemo ? '🔴 Nascondi anteprima' : '👀 Mostra anteprima con dati demo'}
-                    </button>
+                {/* ═══════════════════════════════════════════
+                    STATO 0: EMPTY - Nessuna missione
+                ═══════════════════════════════════════════ */}
+                {phase === 'empty' && (
+                    <section className="empty-state">
+                        <div className="empty-icon">🎯</div>
+                        <h3>Qual è il tuo obiettivo?</h3>
+                        <p>NUR ti aiuterà a scoprirlo e raggiungerlo.</p>
+                        <Link href="/chat" className="btn-primary">
+                            💬 Parla con NUR
+                        </Link>
+                    </section>
                 )}
 
                 {/* ═══════════════════════════════════════════
-                    MISSIONE PRINCIPALE
+                    STATO 1: MISSION_ONLY - Ha missione ma no capitoli
                 ═══════════════════════════════════════════ */}
-                <section className="mission-card">
-                    {displayMission ? (
-                        <>
-                            <div className="mission-header">
-                                <span className="mission-badge">🎯 LA TUA MISSIONE</span>
-                                {daysLeft && daysLeft > 0 && (
-                                    <span className="days-badge">{daysLeft} giorni</span>
-                                )}
-                            </div>
-                            
-                            <h3 className="mission-title">{displayMission.title}</h3>
-                            
-                            {displayMission.description && (
-                                <p className="mission-desc">{displayMission.description}</p>
-                            )}
+                {phase === 'mission_only' && mission && (
+                    <section className="mission-card solo">
+                        <div className="mission-badge">🎯 LA TUA MISSIONE</div>
+                        <h3 className="mission-title">{mission.title}</h3>
+                        {mission.description && (
+                            <p className="mission-desc">{mission.description}</p>
+                        )}
+                        <div className="progress-bar">
+                            <div className="progress-fill" style={{ width: '0%' }}></div>
+                        </div>
+                        <div className="progress-label">0%</div>
 
-                            {/* Progress Bar Grande */}
-                            <div className="mission-progress">
-                                <div className="progress-track">
-                                    <div 
-                                        className="progress-fill"
-                                        style={{ width: `${progress}%` }}
-                                    >
-                                        <div className="progress-glow"></div>
-                                    </div>
-                                    <div 
-                                        className="progress-marker"
-                                        style={{ left: `${progress}%` }}
-                                    >
-                                        <span className="marker-dot"></span>
-                                    </div>
-                                </div>
-                                
-                                <div className="progress-labels">
-                                    <div className="label-start">
-                                        <span className="label-value">{formatValue(displayMission.start_value, displayMission.unit)}</span>
-                                        <span className="label-text">Partenza</span>
-                                    </div>
-                                    <div className="label-current">
-                                        <span className="label-percent">{progress}%</span>
-                                    </div>
-                                    <div className="label-end">
-                                        <span className="label-value">{formatValue(displayMission.target_value, displayMission.unit)}</span>
-                                        <span className="label-text">Obiettivo</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Current Value Highlight */}
-                            <div className="current-value-box">
-                                <span className="current-label">Adesso sei a</span>
-                                <span className="current-value">{formatValue(displayMission.current_value, displayMission.unit)}</span>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-mission">
-                            <div className="empty-icon">🎯</div>
-                            <h3>Qual è la tua missione?</h3>
-                            <p>Parla con NUR per scoprire il tuo vero obiettivo</p>
+                        <div className="cta-box">
+                            <p className="cta-text">Serve un piano per iniziare</p>
                             <Link href="/chat" className="btn-primary">
-                                💬 Parla con NUR
+                                💬 Crea il piano con NUR
                             </Link>
                         </div>
-                    )}
-                </section>
+                    </section>
+                )}
 
                 {/* ═══════════════════════════════════════════
-                    TASK DEL GIORNO
+                    STATI 2-3: Ha capitoli (con o senza task)
                 ═══════════════════════════════════════════ */}
-                <section className="task-card">
-                    {displayTask ? (
-                        <>
-                            <div className="task-header">
-                                <span className="task-badge">🔥 OGGI</span>
-                                {displayTask.parent_title && (
-                                    <span className="task-parent">📌 {displayTask.parent_title}</span>
+                {(phase === 'has_chapters' || phase === 'has_steps' || phase === 'complete') && mission && (
+                    <>
+                        {/* TASK HERO - Solo se c'è una task attiva */}
+                        {activeTask && (
+                            <section className="task-hero">
+                                <div className="task-badge">🔥 LA TUA TASK</div>
+
+                                <h3 className="task-title">{activeTask.title}</h3>
+
+                                {activeTask.description && (
+                                    <p className="task-desc">{activeTask.description}</p>
                                 )}
-                            </div>
-                            
-                            <h3 className="task-title">{displayTask.title}</h3>
-                            
-                            {displayTask.description && (
-                                <p className="task-desc">{displayTask.description}</p>
-                            )}
 
-                            {/* Task Progress */}
-                            <div className="task-progress">
-                                <div className="task-progress-bar">
-                                    <div 
-                                        className="task-progress-fill"
-                                        style={{ width: `${displayTask.progress}%` }}
-                                    ></div>
+                                {activeStep && (
+                                    <div className="task-context">
+                                        📍 Step {currentStepIndex} di {stepsInChapter.length} · {activeStep.title}
+                                    </div>
+                                )}
+
+                                <div className="task-actions">
+                                    <button className="btn-success" onClick={handleCompleteTask}>
+                                        ✅ FATTO!
+                                    </button>
+                                    <Link href="/chat" className="btn-ghost">
+                                        💬 Aiuto
+                                    </Link>
                                 </div>
-                                <span className="task-percent">{displayTask.progress}%</span>
-                            </div>
+                            </section>
+                        )}
 
-                            <div className="task-actions">
-                                <button className="btn-success">
-                                    ✅ Completato!
-                                </button>
-                                <Link href="/chat" className="btn-ghost">
-                                    💬 Ho bisogno di aiuto
+                        {/* CTA se mancano step o task */}
+                        {!activeTask && (
+                            <section className="cta-card">
+                                <div className="cta-icon">⚠️</div>
+                                <p className="cta-message">
+                                    {phase === 'has_chapters' && activeChapter
+                                        ? `Scomponi "${activeChapter.title}" in step`
+                                        : phase === 'has_steps' && activeStep
+                                            ? `Crea una task per "${activeStep.title}"`
+                                            : 'Configura il prossimo passo'}
+                                </p>
+                                <Link href="/chat" className="btn-primary">
+                                    💬 Definisci con NUR
                                 </Link>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-task">
-                            <div className="empty-icon">✨</div>
-                            <p>Nessun task attivo</p>
-                            <Link href="/chat" className="btn-secondary">
-                                💬 Chiedi a NUR
-                            </Link>
-                        </div>
-                    )}
-                </section>
+                            </section>
+                        )}
 
-                {/* ═══════════════════════════════════════════
-                    IL TUO PIANO - ALBERO OBIETTIVI
-                ═══════════════════════════════════════════ */}
-                {displayMission && displayObjectives.length > 0 && (
-                    <section className="plan-card">
-                        <div className="plan-header">
-                            <span className="plan-badge">📋 IL TUO PIANO</span>
-                        </div>
+                        {/* CHAPTER PROGRESS - Timeline orizzontale */}
+                        {activeChapter && stepsInChapter.length > 0 && (
+                            <section className="chapter-progress">
+                                <div className="chapter-header">
+                                    <span className="chapter-badge">📋 CAPITOLO {chapters.findIndex(c => c.id === activeChapter.id) + 1}</span>
+                                    <span className="chapter-title">{activeChapter.title}</span>
+                                </div>
 
-                        <div className="plan-tree">
-                            {displayObjectives
-                                .filter(o => o.level === 'major')
-                                .map((obj, idx) => {
-                                    const children = displayObjectives.filter(o => o.parent_id === obj.id)
-                                    const isLast = idx === displayObjectives.filter(o => o.level === 'major').length - 1
-                                    
-                                    return (
-                                        <div key={obj.id} className="plan-item">
-                                            {/* Connector line */}
-                                            {!isLast && <div className="connector-line"></div>}
-                                            
-                                            {/* Status Circle */}
-                                            <div className={`status-circle ${obj.status}`}>
-                                                {obj.status === 'completed' ? (
-                                                    <span className="check">✓</span>
-                                                ) : (
-                                                    <svg viewBox="0 0 36 36" className="progress-ring">
-                                                        <circle
-                                                            cx="18" cy="18" r="16"
-                                                            fill="none"
-                                                            stroke="rgba(255,255,255,0.1)"
-                                                            strokeWidth="3"
-                                                        />
-                                                        <circle
-                                                            cx="18" cy="18" r="16"
-                                                            fill="none"
-                                                            stroke={obj.status === 'active' ? '#667eea' : 'rgba(255,255,255,0.2)'}
-                                                            strokeWidth="3"
-                                                            strokeDasharray={`${obj.progress}, 100`}
-                                                            strokeLinecap="round"
-                                                            transform="rotate(-90 18 18)"
-                                                        />
-                                                    </svg>
+                                <div className="steps-timeline">
+                                    {stepsInChapter.map((step, idx) => {
+                                        const state = getDisplayState(step, chain)
+                                        return (
+                                            <div key={step.id} className="step-node-wrapper">
+                                                {idx > 0 && (
+                                                    <div className={`step-line ${state === 'done' || (idx < currentStepIndex - 1) ? 'done' : ''}`}></div>
                                                 )}
-                                            </div>
-
-                                            {/* Content */}
-                                            <div className="plan-content">
-                                                <div className="plan-main">
-                                                    <span className={`plan-title ${obj.status}`}>
-                                                        {obj.title}
-                                                    </span>
-                                                    {obj.status === 'active' && (
-                                                        <span className="here-badge">← SEI QUI</span>
-                                                    )}
-                                                    {obj.status === 'completed' && (
-                                                        <span className="done-badge">✓</span>
-                                                    )}
+                                                <div className={`step-node ${state}`}>
+                                                    {state === 'done' ? '✓' : state === 'current' ? '◉' : '○'}
                                                 </div>
-                                                
-                                                {obj.status !== 'completed' && (
-                                                    <span className="plan-progress">{obj.progress}%</span>
-                                                )}
-
-                                                {/* Sub-objectives */}
-                                                {children.length > 0 && (
-                                                    <div className="plan-children">
-                                                        {children.map(child => (
-                                                            <div key={child.id} className="plan-child">
-                                                                <span className={`child-dot ${child.status}`}>
-                                                                    {child.status === 'completed' ? '●' : 
-                                                                     child.status === 'active' ? '◐' : '○'}
-                                                                </span>
-                                                                <span className={`child-title ${child.status}`}>
-                                                                    {child.title}
-                                                                </span>
-                                                                {child.status !== 'completed' && (
-                                                                    <span className="child-progress">
-                                                                        {child.progress}%
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                <div className={`step-label ${state}`}>
+                                                    {step.title.length > 15 ? step.title.slice(0, 15) + '...' : step.title}
+                                                </div>
+                                                {state === 'current' && (
+                                                    <div className="step-indicator">↑ SEI QUI</div>
                                                 )}
                                             </div>
+                                        )
+                                    })}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* MISSION BAR - Panoramica capitoli */}
+                        <section className="mission-bar">
+                            <div className="mission-header">
+                                <span className="mission-badge">🎯 MISSIONE</span>
+                                <span className="mission-title-small">{mission.title}</span>
+                            </div>
+
+                            <div className="chapters-grid">
+                                {chapters.map((ch, idx) => {
+                                    const state = getDisplayState(ch, chain)
+                                    return (
+                                        <div key={ch.id} className={`chapter-block ${state}`}>
+                                            <div className="chapter-icon">
+                                                {state === 'done' ? '✅' : state === 'current' ? '◉' : '🔒'}
+                                            </div>
+                                            <div className="chapter-num">Cap {idx + 1}</div>
                                         </div>
                                     )
                                 })}
-                        </div>
-                    </section>
+                                <div className="chapter-block final">
+                                    <div className="chapter-icon">🏆</div>
+                                    <div className="chapter-num">Fine</div>
+                                </div>
+                            </div>
+
+                            <div className="mission-progress">
+                                <div className="progress-bar">
+                                    <div
+                                        className="progress-fill"
+                                        style={{ width: `${missionProgress}%` }}
+                                    ></div>
+                                </div>
+                                <span className="progress-percent">{missionProgress}%</span>
+                            </div>
+                        </section>
+                    </>
                 )}
 
                 {/* Quick Link to Scrivania */}
@@ -433,21 +394,23 @@ export default function DashboardPage() {
                 </Link>
             </main>
 
-            {/* ═══════════════════════════════════════════
-                BOTTOM NAVIGATION
-            ═══════════════════════════════════════════ */}
+            {/* Bottom Navigation */}
             <nav className="bottom-nav">
-                <Link href="/la-mia-vita" className="nav-item active">
+                <Link href="/" className="nav-item">
                     <span className="nav-icon">🏠</span>
-                    <span className="nav-label">Dashboard</span>
+                    <span className="nav-label">Home</span>
                 </Link>
                 <Link href="/chat" className="nav-item">
                     <span className="nav-icon">💬</span>
-                    <span className="nav-label">Chat</span>
+                    <span className="nav-label">NUR</span>
                 </Link>
-                <Link href="/giornale" className="nav-item">
-                    <span className="nav-icon">📚</span>
-                    <span className="nav-label">Scrivania</span>
+                <Link href="/dashboard" className="nav-item active">
+                    <span className="nav-icon">📊</span>
+                    <span className="nav-label">Dashboard</span>
+                </Link>
+                <Link href="/profilo" className="nav-item">
+                    <span className="nav-icon">👤</span>
+                    <span className="nav-label">Profilo</span>
                 </Link>
             </nav>
 
@@ -456,10 +419,11 @@ export default function DashboardPage() {
     )
 }
 
+// ============================================
+// STYLES
+// ============================================
+
 const styles = `
-    /* ═══════════════════════════════════════════
-       BASE & BACKGROUND
-    ═══════════════════════════════════════════ */
     .container {
         min-height: 100vh;
         background: #050510;
@@ -475,7 +439,7 @@ const styles = `
         left: 0;
         right: 0;
         bottom: 0;
-        background: 
+        background:
             radial-gradient(ellipse at 30% 20%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
             radial-gradient(ellipse at 70% 80%, rgba(118, 75, 162, 0.1) 0%, transparent 50%);
         pointer-events: none;
@@ -494,9 +458,7 @@ const styles = `
         z-index: 0;
     }
 
-    /* ═══════════════════════════════════════════
-       HEADER
-    ═══════════════════════════════════════════ */
+    /* Header */
     .header {
         position: sticky;
         top: 0;
@@ -514,22 +476,14 @@ const styles = `
         color: rgba(255,255,255,0.5);
         text-decoration: none;
         font-size: 14px;
-        transition: color 0.2s;
-    }
-
-    .back:hover {
-        color: #fff;
     }
 
     .header-title {
         font-size: 18px;
         font-weight: 600;
-        color: #fff;
     }
 
-    /* ═══════════════════════════════════════════
-       MAIN CONTENT
-    ═══════════════════════════════════════════ */
+    /* Main */
     .main {
         position: relative;
         z-index: 1;
@@ -554,52 +508,38 @@ const styles = `
         font-weight: 600;
     }
 
-    .demo-toggle {
-        display: block;
-        width: 100%;
-        padding: 12px;
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 60px 24px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 24px;
+    }
+
+    .empty-icon {
+        font-size: 64px;
         margin-bottom: 20px;
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px dashed rgba(102, 126, 234, 0.3);
-        border-radius: 12px;
-        color: rgba(255,255,255,0.7);
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.2s;
     }
 
-    .demo-toggle:hover {
-        background: rgba(102, 126, 234, 0.2);
+    .empty-state h3 {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 12px;
     }
 
-    /* ═══════════════════════════════════════════
-       MISSION CARD
-    ═══════════════════════════════════════════ */
-    .mission-card {
+    .empty-state p {
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 28px;
+    }
+
+    /* Mission Card (solo) */
+    .mission-card.solo {
         background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
         border: 1px solid rgba(102, 126, 234, 0.3);
         border-radius: 20px;
         padding: 24px;
-        margin-bottom: 20px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .mission-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.5), transparent);
-    }
-
-    .mission-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
+        text-align: center;
     }
 
     .mission-badge {
@@ -608,154 +548,80 @@ const styles = `
         color: #667eea;
         letter-spacing: 1.5px;
         text-transform: uppercase;
-    }
-
-    .days-badge {
-        font-size: 12px;
-        padding: 4px 12px;
-        background: rgba(255,255,255,0.1);
-        border-radius: 20px;
-        color: rgba(255,255,255,0.7);
+        margin-bottom: 16px;
     }
 
     .mission-title {
-        font-size: 24px;
+        font-size: 22px;
         font-weight: 700;
-        color: #fff;
         margin-bottom: 8px;
-        line-height: 1.3;
     }
 
     .mission-desc {
         font-size: 14px;
         color: rgba(255,255,255,0.6);
-        margin-bottom: 24px;
+        margin-bottom: 20px;
     }
 
-    /* Mission Progress Bar */
-    .mission-progress {
-        margin: 24px 0;
-    }
-
-    .progress-track {
-        position: relative;
-        height: 12px;
+    .progress-bar {
+        height: 8px;
         background: rgba(255,255,255,0.1);
-        border-radius: 6px;
-        overflow: visible;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 8px;
     }
 
     .progress-fill {
-        position: relative;
         height: 100%;
-        background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
-        border-radius: 6px;
-        transition: width 1s ease-out;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border-radius: 4px;
+        transition: width 0.5s ease;
     }
 
-    .progress-glow {
-        position: absolute;
-        top: -4px;
-        right: -4px;
-        bottom: -4px;
-        width: 20px;
-        background: radial-gradient(ellipse at right, rgba(240, 147, 251, 0.6), transparent);
-        filter: blur(8px);
-    }
-
-    .progress-marker {
-        position: absolute;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 10;
-    }
-
-    .marker-dot {
-        display: block;
-        width: 20px;
-        height: 20px;
-        background: #fff;
-        border-radius: 50%;
-        box-shadow: 0 0 20px rgba(102, 126, 234, 0.8), 0 0 40px rgba(102, 126, 234, 0.4);
-    }
-
-    .progress-labels {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 16px;
-    }
-
-    .label-start, .label-end {
-        text-align: center;
-    }
-
-    .label-start { text-align: left; }
-    .label-end { text-align: right; }
-
-    .label-value {
-        display: block;
-        font-size: 14px;
-        font-weight: 600;
-        color: rgba(255,255,255,0.8);
-    }
-
-    .label-text {
-        font-size: 11px;
-        color: rgba(255,255,255,0.4);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .label-current {
-        text-align: center;
-    }
-
-    .label-percent {
-        font-size: 32px;
-        font-weight: 700;
-        color: #667eea;
-        text-shadow: 0 0 30px rgba(102, 126, 234, 0.5);
-    }
-
-    .current-value-box {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        margin-top: 20px;
-        padding: 16px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 12px;
-    }
-
-    .current-label {
+    .progress-label {
         font-size: 14px;
         color: rgba(255,255,255,0.5);
     }
 
-    .current-value {
-        font-size: 28px;
-        font-weight: 700;
-        color: #51cf66;
+    .cta-box {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255,255,255,0.1);
     }
 
-    /* ═══════════════════════════════════════════
-       TASK CARD
-    ═══════════════════════════════════════════ */
-    .task-card {
-        background: linear-gradient(135deg, rgba(255, 146, 43, 0.12) 0%, rgba(255, 107, 107, 0.12) 100%);
-        border: 1px solid rgba(255, 146, 43, 0.25);
-        border-radius: 20px;
+    .cta-text {
+        color: rgba(255,255,255,0.6);
+        margin-bottom: 16px;
+        font-size: 14px;
+    }
+
+    /* CTA Card */
+    .cta-card {
+        background: rgba(255, 200, 50, 0.1);
+        border: 1px solid rgba(255, 200, 50, 0.3);
+        border-radius: 16px;
         padding: 24px;
+        text-align: center;
         margin-bottom: 20px;
     }
 
-    .task-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+    .cta-icon {
+        font-size: 32px;
         margin-bottom: 12px;
-        flex-wrap: wrap;
+    }
+
+    .cta-message {
+        color: rgba(255,255,255,0.8);
+        margin-bottom: 16px;
+    }
+
+    /* Task Hero */
+    .task-hero {
+        background: linear-gradient(135deg, rgba(255, 146, 43, 0.15) 0%, rgba(255, 107, 107, 0.15) 100%);
+        border: 1px solid rgba(255, 146, 43, 0.3);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 20px;
     }
 
     .task-badge {
@@ -764,17 +630,12 @@ const styles = `
         color: #ff922b;
         letter-spacing: 1.5px;
         text-transform: uppercase;
-    }
-
-    .task-parent {
-        font-size: 12px;
-        color: rgba(255,255,255,0.5);
+        margin-bottom: 12px;
     }
 
     .task-title {
         font-size: 20px;
         font-weight: 600;
-        color: #fff;
         margin-bottom: 8px;
     }
 
@@ -782,36 +643,13 @@ const styles = `
         font-size: 14px;
         color: rgba(255,255,255,0.6);
         line-height: 1.5;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
     }
 
-    .task-progress {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+    .task-context {
+        font-size: 13px;
+        color: rgba(255,255,255,0.5);
         margin-bottom: 20px;
-    }
-
-    .task-progress-bar {
-        flex: 1;
-        height: 8px;
-        background: rgba(255,255,255,0.1);
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    .task-progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #ff922b, #ff6b6b);
-        border-radius: 4px;
-        transition: width 0.3s;
-    }
-
-    .task-percent {
-        font-size: 16px;
-        font-weight: 600;
-        color: #ff922b;
-        min-width: 45px;
     }
 
     .task-actions {
@@ -819,160 +657,202 @@ const styles = `
         gap: 12px;
     }
 
-    /* ═══════════════════════════════════════════
-       PLAN CARD - ALBERO OBIETTIVI
-    ═══════════════════════════════════════════ */
-    .plan-card {
+    /* Chapter Progress */
+    .chapter-progress {
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 20px;
-        padding: 24px;
+        border-radius: 16px;
+        padding: 20px;
         margin-bottom: 20px;
     }
 
-    .plan-header {
+    .chapter-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         margin-bottom: 20px;
     }
 
-    .plan-badge {
+    .chapter-badge {
         font-size: 11px;
         font-weight: 700;
         color: rgba(255,255,255,0.5);
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
+        letter-spacing: 1px;
     }
 
-    .plan-tree {
-        position: relative;
+    .chapter-title {
+        font-size: 14px;
+        color: rgba(255,255,255,0.8);
     }
 
-    .plan-item {
+    .steps-timeline {
         display: flex;
-        gap: 16px;
-        padding: 16px 0;
+        align-items: flex-start;
+        justify-content: space-between;
         position: relative;
+        padding: 0 10px;
     }
 
-    .connector-line {
+    .step-node-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 1;
+    }
+
+    .step-line {
         position: absolute;
-        left: 20px;
-        top: 56px;
-        bottom: -16px;
-        width: 2px;
+        top: 12px;
+        right: 50%;
+        width: 100%;
+        height: 2px;
         background: rgba(255,255,255,0.1);
     }
 
-    .status-circle {
-        width: 40px;
-        height: 40px;
+    .step-line.done {
+        background: #51cf66;
+    }
+
+    .step-node {
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        flex-shrink: 0;
-        position: relative;
-    }
-
-    .status-circle.completed {
-        background: linear-gradient(135deg, #51cf66, #40c057);
-    }
-
-    .status-circle .check {
-        font-size: 18px;
-        color: #fff;
-        font-weight: 700;
-    }
-
-    .status-circle .progress-ring {
-        width: 40px;
-        height: 40px;
-    }
-
-    .plan-content {
-        flex: 1;
-    }
-
-    .plan-main {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    .plan-title {
-        font-size: 16px;
+        font-size: 12px;
         font-weight: 600;
-        color: rgba(255,255,255,0.9);
+        position: relative;
+        z-index: 2;
+        background: #050510;
     }
 
-    .plan-title.completed {
-        color: rgba(255,255,255,0.5);
-        text-decoration: line-through;
+    .step-node.done {
+        background: #51cf66;
+        color: #fff;
     }
 
-    .plan-title.pending {
-        color: rgba(255,255,255,0.4);
+    .step-node.current {
+        background: #667eea;
+        color: #fff;
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
     }
 
-    .here-badge {
+    .step-node.locked {
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.3);
+    }
+
+    .step-label {
         font-size: 11px;
-        font-weight: 700;
-        color: #667eea;
-        padding: 2px 8px;
-        background: rgba(102, 126, 234, 0.2);
-        border-radius: 4px;
+        margin-top: 8px;
+        text-align: center;
+        color: rgba(255,255,255,0.5);
+        max-width: 80px;
     }
 
-    .done-badge {
+    .step-label.current {
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    .step-label.done {
         color: #51cf66;
     }
 
-    .plan-progress {
-        font-size: 12px;
-        color: rgba(255,255,255,0.4);
+    .step-indicator {
+        font-size: 10px;
+        color: #667eea;
         margin-top: 4px;
+        font-weight: 600;
     }
 
-    .plan-children {
-        margin-top: 12px;
-        padding-left: 8px;
-        border-left: 2px solid rgba(255,255,255,0.1);
+    /* Mission Bar */
+    .mission-bar {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
     }
 
-    .plan-child {
+    .mission-header {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 8px 0;
+        gap: 12px;
+        margin-bottom: 16px;
     }
 
-    .child-dot {
-        font-size: 10px;
-    }
-
-    .child-dot.completed { color: #51cf66; }
-    .child-dot.active { color: #667eea; }
-    .child-dot.pending { color: rgba(255,255,255,0.3); }
-
-    .child-title {
+    .mission-title-small {
         font-size: 14px;
-        color: rgba(255,255,255,0.7);
+        color: rgba(255,255,255,0.8);
     }
 
-    .child-title.completed {
-        color: rgba(255,255,255,0.4);
-        text-decoration: line-through;
+    .chapters-grid {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
     }
 
-    .child-progress {
-        font-size: 12px;
-        color: rgba(255,255,255,0.3);
-        margin-left: auto;
+    .chapter-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+        min-width: 60px;
     }
 
-    /* ═══════════════════════════════════════════
-       SCRIVANIA LINK
-    ═══════════════════════════════════════════ */
+    .chapter-block.done {
+        background: rgba(81, 207, 102, 0.15);
+    }
+
+    .chapter-block.current {
+        background: rgba(102, 126, 234, 0.2);
+        border: 1px solid rgba(102, 126, 234, 0.4);
+    }
+
+    .chapter-block.locked {
+        opacity: 0.4;
+    }
+
+    .chapter-block.final {
+        background: rgba(255, 200, 50, 0.1);
+    }
+
+    .chapter-icon {
+        font-size: 18px;
+        margin-bottom: 4px;
+    }
+
+    .chapter-num {
+        font-size: 11px;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .mission-progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .mission-progress .progress-bar {
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+    .progress-percent {
+        font-size: 14px;
+        font-weight: 600;
+        color: #667eea;
+        min-width: 40px;
+    }
+
+    /* Scrivania Link */
     .scrivania-link {
         display: flex;
         align-items: center;
@@ -1004,33 +884,7 @@ const styles = `
         color: rgba(255,255,255,0.3);
     }
 
-    /* ═══════════════════════════════════════════
-       EMPTY STATES
-    ═══════════════════════════════════════════ */
-    .empty-mission, .empty-task {
-        text-align: center;
-        padding: 32px 16px;
-    }
-
-    .empty-icon {
-        font-size: 48px;
-        margin-bottom: 16px;
-        display: block;
-    }
-
-    .empty-mission h3, .empty-task h3 {
-        font-size: 20px;
-        margin-bottom: 8px;
-    }
-
-    .empty-mission p, .empty-task p {
-        color: rgba(255,255,255,0.5);
-        margin-bottom: 20px;
-    }
-
-    /* ═══════════════════════════════════════════
-       BUTTONS
-    ═══════════════════════════════════════════ */
+    /* Buttons */
     .btn-primary {
         display: inline-block;
         padding: 14px 28px;
@@ -1068,24 +922,6 @@ const styles = `
         box-shadow: 0 10px 25px rgba(81, 207, 102, 0.4);
     }
 
-    .btn-secondary {
-        display: inline-block;
-        padding: 14px 28px;
-        background: rgba(255,255,255,0.1);
-        color: rgba(255,255,255,0.8);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 14px;
-        font-size: 15px;
-        font-weight: 500;
-        text-decoration: none;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .btn-secondary:hover {
-        background: rgba(255,255,255,0.15);
-    }
-
     .btn-ghost {
         flex: 1;
         padding: 16px;
@@ -1101,12 +937,9 @@ const styles = `
 
     .btn-ghost:hover {
         background: rgba(255,255,255,0.05);
-        border-color: rgba(255,255,255,0.25);
     }
 
-    /* ═══════════════════════════════════════════
-       BOTTOM NAVIGATION
-    ═══════════════════════════════════════════ */
+    /* Bottom Navigation */
     .bottom-nav {
         position: fixed;
         bottom: 0;
@@ -1137,10 +970,6 @@ const styles = `
         color: #667eea;
     }
 
-    .nav-item:hover {
-        color: rgba(255,255,255,0.8);
-    }
-
     .nav-icon {
         font-size: 22px;
     }
@@ -1150,9 +979,7 @@ const styles = `
         font-weight: 500;
     }
 
-    /* ═══════════════════════════════════════════
-       AUTH PROMPT
-    ═══════════════════════════════════════════ */
+    /* Auth Prompt */
     .auth-prompt {
         display: flex;
         flex-direction: column;
@@ -1178,9 +1005,7 @@ const styles = `
         margin-bottom: 28px;
     }
 
-    /* ═══════════════════════════════════════════
-       RESPONSIVE
-    ═══════════════════════════════════════════ */
+    /* Responsive */
     @media (max-width: 480px) {
         .main {
             padding: 16px;
@@ -1190,30 +1015,17 @@ const styles = `
             font-size: 22px;
         }
 
-        .mission-title {
-            font-size: 20px;
-        }
-
-        .label-percent {
-            font-size: 28px;
-        }
-
         .task-actions {
             flex-direction: column;
         }
 
-        .status-circle {
-            width: 36px;
-            height: 36px;
+        .chapters-grid {
+            gap: 6px;
         }
 
-        .status-circle .progress-ring {
-            width: 36px;
-            height: 36px;
-        }
-
-        .connector-line {
-            left: 18px;
+        .chapter-block {
+            padding: 10px 12px;
+            min-width: 50px;
         }
     }
 `
