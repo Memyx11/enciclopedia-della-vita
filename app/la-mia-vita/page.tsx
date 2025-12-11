@@ -1,260 +1,181 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { UserButton, useUser } from '@clerk/nextjs'
 import { supabase } from '@/lib/supabase'
-import './dashboard.css'
 
-// ═══════════════════════════════════════════════════════════════
+// ============================================
 // TYPES
-// ═══════════════════════════════════════════════════════════════
-
-interface UserStats {
-    level: number
-    xp: number
-    xp_to_next: number
-    streak: number
-    lives: number
-    rank_name: string
-    rank_emoji: string
-}
-
-interface Chapter {
-    id: string
-    title: string
-    order_index: number
-}
-
-interface Task {
-    id: string
-    title: string
-    description: string
-    difficulty: 'easy' | 'medium' | 'hard'
-    xp_reward: number
-    estimated_minutes: number
-    status: 'pending' | 'completed'
-    order_index: number
-    chapter_id: string
-    chapter_title?: string
-    displayStatus?: 'done' | 'current' | 'locked'
-}
+// ============================================
 
 interface Mission {
     id: string
     title: string
-    description: string
+    description: string | null
+    why: string | null
 }
 
-interface Material {
+interface Objective {
     id: string
+    mission_id: string
+    parent_id: string | null
+    level: 'major' | 'sub' | 'task'
     title: string
-    content: string
-    entry_type: string
+    description: string | null
+    status: 'pending' | 'active' | 'completed' | 'skipped'
+    progress: number
+    sort_order: number
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════
-
-const RANKS = [
-    { level: 1, name: 'Seme', emoji: '🌱' },
-    { level: 5, name: 'Germoglio', emoji: '🌿' },
-    { level: 10, name: 'Viaggiatore', emoji: '🚶' },
-    { level: 20, name: 'Esploratore', emoji: '🧭' },
-    { level: 30, name: 'Guerriero', emoji: '⚔️' },
-    { level: 40, name: 'Maestro', emoji: '🎓' },
-    { level: 50, name: 'Leggenda', emoji: '👑' },
-]
-
-const DIFFICULTY_CONFIG = {
-    easy: { label: 'Facile', xp: 30, time: 15, color: '#22c55e' },
-    medium: { label: 'Media', xp: 60, time: 30, color: '#f59e0b' },
-    hard: { label: 'Difficile', xp: 100, time: 60, color: '#ef4444' },
+interface ChainState {
+    activeChapter: string | null
+    activeStep: string | null
+    activeTask: string | null
 }
 
-function getRank(level: number) {
-    for (let i = RANKS.length - 1; i >= 0; i--) {
-        if (level >= RANKS[i].level) return RANKS[i]
+type DashboardPhase = 'empty' | 'mission_only' | 'has_chapters' | 'has_steps' | 'complete'
+
+// ============================================
+// CHAIN LOGIC
+// ============================================
+
+function calculateChain(objectives: Objective[]): ChainState {
+    const chapters = objectives
+        .filter(o => o.level === 'major')
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeChapter = chapters.find(c => c.status !== 'completed')
+    if (!activeChapter) return { activeChapter: null, activeStep: null, activeTask: null }
+
+    const steps = objectives
+        .filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeStep = steps.find(s => s.status !== 'completed')
+    if (!activeStep) return { activeChapter: activeChapter.id, activeStep: null, activeTask: null }
+
+    const tasks = objectives
+        .filter(o => o.level === 'task' && o.parent_id === activeStep.id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+
+    const activeTask = tasks.find(t => t.status !== 'completed')
+
+    return {
+        activeChapter: activeChapter.id,
+        activeStep: activeStep.id,
+        activeTask: activeTask?.id || null
     }
-    return RANKS[0]
 }
 
-function getXpForLevel(level: number): number {
-    return Math.floor(100 * Math.pow(level, 1.5))
+function getDisplayState(obj: Objective, chain: ChainState): 'done' | 'current' | 'locked' {
+    if (obj.status === 'completed') return 'done'
+    const isActive = obj.id === chain.activeChapter || obj.id === chain.activeStep || obj.id === chain.activeTask
+    return isActive ? 'current' : 'locked'
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ============================================
 // COMPONENT
-// ═══════════════════════════════════════════════════════════════
+// ============================================
 
-export default function DashboardPage() {
+export default function LaMiaVitaPage() {
     const { user, isLoaded } = useUser()
-
-    // State
-    const [stats, setStats] = useState<UserStats>({
-        level: 1,
-        xp: 0,
-        xp_to_next: 100,
-        streak: 0,
-        lives: 3,
-        rank_name: 'Seme',
-        rank_emoji: '🌱'
-    })
-    const [mission, setMission] = useState<Mission | null>(null)
-    const [chapter, setChapter] = useState<Chapter | null>(null)
-    const [tasks, setTasks] = useState<Task[]>([])
-    const [activeTask, setActiveTask] = useState<Task | null>(null)
-    const [materials, setMaterials] = useState<Material[]>([])
+    const [greeting, setGreeting] = useState('')
     const [loading, setLoading] = useState(true)
-    const [activePanel, setActivePanel] = useState<'scrivania' | 'dashboard' | 'note' | null>(null)
-    const [taskNotes, setTaskNotes] = useState('')
-    const [showModal, setShowModal] = useState(false)
-    const [modalData, setModalData] = useState({ xp: 0, streak: 0, levelUp: false })
 
-    // ═══════════════════════════════════════════════════════════════
-    // DATA LOADING
-    // ═══════════════════════════════════════════════════════════════
+    // Data
+    const [mission, setMission] = useState<Mission | null>(null)
+    const [objectives, setObjectives] = useState<Objective[]>([])
+    const [chain, setChain] = useState<ChainState>({ activeChapter: null, activeStep: null, activeTask: null })
+    const [phase, setPhase] = useState<DashboardPhase>('empty')
 
-    const loadData = useCallback(async () => {
+    // Computed
+    const chapters = objectives.filter(o => o.level === 'major')
+    const completedChapters = chapters.filter(c => c.status === 'completed').length
+    const missionProgress = chapters.length > 0 ? Math.round((completedChapters / chapters.length) * 100) : 0
+
+    const activeChapter = objectives.find(o => o.id === chain.activeChapter)
+    const activeStep = objectives.find(o => o.id === chain.activeStep)
+    const activeTask = objectives.find(o => o.id === chain.activeTask)
+
+    const stepsInChapter = activeChapter
+        ? objectives.filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
+        : []
+    const currentStepIndex = activeStep
+        ? stepsInChapter.findIndex(s => s.id === activeStep.id) + 1
+        : 0
+
+    useEffect(() => {
+        const hour = new Date().getHours()
+        if (hour < 12) setGreeting('Buongiorno')
+        else if (hour < 18) setGreeting('Buon pomeriggio')
+        else setGreeting('Buonasera')
+    }, [])
+
+    useEffect(() => {
+        if (user) loadData()
+    }, [user])
+
+    const loadData = async () => {
         if (!user) return
 
         try {
-            // 1. Load user stats
-            const { data: statsData } = await supabase
-                .from('user_stats')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .maybeSingle()
-
-            if (statsData) {
-                const level = statsData.level || 1
-                const rank = getRank(level)
-                setStats({
-                    level,
-                    xp: statsData.xp || 0,
-                    xp_to_next: getXpForLevel(level),
-                    streak: statsData.streak || 0,
-                    lives: statsData.lives ?? 3,
-                    rank_name: rank.name,
-                    rank_emoji: rank.emoji
-                })
-            }
-
-            // 2. Load active mission
+            // Load mission
             const { data: missionData } = await supabase
                 .from('user_mission')
                 .select('*')
                 .eq('clerk_user_id', user.id)
-                .in('status', ['active', 'locked'])
-                .order('created_at', { ascending: false })
-                .maybeSingle()
+                .eq('status', 'active')
+                .single()
 
             if (missionData) {
                 setMission(missionData)
 
-                // 3. Load tasks for this mission (ordered by sort_order)
-                const { data: tasksData } = await supabase
+                // Load objectives
+                const { data: objData } = await supabase
                     .from('objectives')
                     .select('*')
                     .eq('clerk_user_id', user.id)
                     .eq('mission_id', missionData.id)
-                    .order('sort_order', { ascending: true })
+                    .order('sort_order')
 
-                if (tasksData && tasksData.length > 0) {
-                    // CHAIN LOGIC: Find FIRST non-completed task = ACTIVE
-                    const firstPending = tasksData.find(t => t.status !== 'completed')
+                const objs = (objData || []) as Objective[]
+                setObjectives(objs)
 
-                    // Map tasks with display status
-                    const processedTasks: Task[] = tasksData.map((t, index) => ({
-                        id: t.id,
-                        title: t.title,
-                        description: t.description || '',
-                        difficulty: t.difficulty || 'medium',
-                        xp_reward: t.xp_reward || DIFFICULTY_CONFIG[t.difficulty || 'medium'].xp,
-                        estimated_minutes: t.estimated_minutes || DIFFICULTY_CONFIG[t.difficulty || 'medium'].time,
-                        status: t.status,
-                        order_index: t.sort_order || index,
-                        chapter_id: t.chapter_id || '',
-                        chapter_title: t.chapter_title || 'Capitolo 1',
-                        // CHAIN LOGIC: done/current/locked
-                        displayStatus: t.status === 'completed'
-                            ? 'done'
-                            : t.id === firstPending?.id
-                                ? 'current'
-                                : 'locked'
-                    }))
+                // Calculate chain
+                const chainState = calculateChain(objs)
+                setChain(chainState)
 
-                    setTasks(processedTasks)
-                    setActiveTask(processedTasks.find(t => t.displayStatus === 'current') || null)
+                // Determine phase
+                const chaps = objs.filter(o => o.level === 'major')
+                const hasSteps = objs.some(o => o.level === 'sub')
+                const hasTasks = objs.some(o => o.level === 'task')
 
-                    // Set chapter from first task
-                    if (processedTasks[0]?.chapter_title) {
-                        setChapter({
-                            id: processedTasks[0].chapter_id,
-                            title: processedTasks[0].chapter_title,
-                            order_index: 1
-                        })
-                    }
+                if (chaps.length === 0) {
+                    setPhase('mission_only')
+                } else if (!hasSteps) {
+                    setPhase('has_chapters')
+                } else if (!hasTasks) {
+                    setPhase('has_steps')
+                } else {
+                    setPhase('complete')
                 }
+            } else {
+                setPhase('empty')
             }
-
-            // 4. Load materials
-            const { data: materialsData } = await supabase
-                .from('journal_entries')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .in('entry_type', ['guide', 'resource', 'article', 'document'])
-                .order('created_at', { ascending: false })
-                .limit(5)
-
-            if (materialsData) {
-                setMaterials(materialsData)
-            }
-
-            // 5. Load saved notes
-            const savedNotes = localStorage.getItem(`task_notes_${user.id}`)
-            if (savedNotes) setTaskNotes(savedNotes)
-
-        } catch (error) {
-            console.error('Error loading data:', error)
-        } finally {
-            setLoading(false)
+        } catch (e) {
+            console.log('No mission data yet')
+            setPhase('empty')
         }
-    }, [user])
 
-    useEffect(() => {
-        if (isLoaded && user) {
-            loadData()
-        } else if (isLoaded && !user) {
-            setLoading(false)
-        }
-    }, [isLoaded, user, loadData])
+        setLoading(false)
+    }
 
-    // Keyboard shortcuts for panels
-    useEffect(() => {
-        const handleKeyPress = (e: KeyboardEvent) => {
-            if (e.target instanceof HTMLTextAreaElement) return
-            if (e.key === '1') togglePanel('scrivania')
-            if (e.key === '2') togglePanel('dashboard')
-            if (e.key === '3') togglePanel('note')
-        }
-        window.addEventListener('keypress', handleKeyPress)
-        return () => window.removeEventListener('keypress', handleKeyPress)
-    }, [activePanel])
-
-    // ═══════════════════════════════════════════════════════════════
-    // ACTIONS
-    // ═══════════════════════════════════════════════════════════════
-
-    const completeTask = async () => {
-        if (!user || !activeTask) return
-
-        const xpEarned = activeTask.xp_reward
-        const newStreak = stats.streak + 1
+    const handleCompleteTask = async () => {
+        if (!activeTask || !user) return
 
         try {
-            // 1. Mark task as completed
+            // Mark task as completed
             await supabase
                 .from('objectives')
                 .update({
@@ -264,451 +185,847 @@ export default function DashboardPage() {
                 })
                 .eq('id', activeTask.id)
 
-            // 2. Update user stats
-            const newXp = stats.xp + xpEarned
-            let newLevel = stats.level
-            let remainingXp = newXp
-            let levelUp = false
-
-            while (remainingXp >= getXpForLevel(newLevel)) {
-                remainingXp -= getXpForLevel(newLevel)
-                newLevel++
-                levelUp = true
-            }
-
-            await supabase
-                .from('user_stats')
-                .upsert({
-                    clerk_user_id: user.id,
-                    level: newLevel,
-                    xp: newXp,
-                    streak: newStreak,
-                    lives: stats.lives,
-                    last_activity: new Date().toISOString()
-                }, { onConflict: 'clerk_user_id' })
-
-            // 3. Check if all tasks completed (mission done)
-            const remainingTasks = tasks.filter(t => t.id !== activeTask.id && t.status !== 'completed')
-            if (remainingTasks.length === 0 && mission) {
-                await supabase
-                    .from('user_mission')
-                    .update({ status: 'completed', completed_at: new Date().toISOString() })
-                    .eq('id', mission.id)
-            }
-
-            // 4. Show celebration modal
-            setModalData({ xp: xpEarned, streak: newStreak, levelUp })
-            setShowModal(true)
-
-            // 5. Reload data
-            setTimeout(() => loadData(), 500)
-
-        } catch (error) {
-            console.error('Error completing task:', error)
+            // Reload data
+            await loadData()
+        } catch (e) {
+            console.error('Error completing task:', e)
         }
     }
 
-    const skipTask = async () => {
-        if (!user || stats.lives <= 0) {
-            alert('Non hai più vite! Completa una task per continuare.')
-            return
-        }
-        if (!confirm('Saltare costa 1 vita e -10 XP. Confermi?')) return
-
-        try {
-            await supabase
-                .from('user_stats')
-                .update({
-                    lives: stats.lives - 1,
-                    xp: Math.max(0, stats.xp - 10),
-                    last_activity: new Date().toISOString()
-                })
-                .eq('clerk_user_id', user.id)
-
-            loadData()
-        } catch (error) {
-            console.error('Error skipping task:', error)
-        }
-    }
-
-    const saveNotes = () => {
-        if (user) {
-            localStorage.setItem(`task_notes_${user.id}`, taskNotes)
-            alert('Note salvate!')
-        }
-    }
-
-    const togglePanel = (panel: 'scrivania' | 'dashboard' | 'note') => {
-        setActivePanel(activePanel === panel ? null : panel)
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // COMPUTED VALUES
-    // ═══════════════════════════════════════════════════════════════
-
-    const xpProgress = stats.xp_to_next > 0
-        ? Math.round((stats.xp % stats.xp_to_next) / stats.xp_to_next * 100)
-        : 0
-    const completedTasks = tasks.filter(t => t.displayStatus === 'done').length
-    const totalTasks = tasks.length
-    const chapterProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
-    const isDestinationUnlocked = completedTasks === totalTasks && totalTasks > 0
-
-    // ═══════════════════════════════════════════════════════════════
-    // RENDER
-    // ═══════════════════════════════════════════════════════════════
-
-    if (!isLoaded || loading) {
-        return (
-            <div className="dashboard-page">
-                <div className="bg-ambient"></div>
-                <div className="loading-state">
-                    <div className="spinner"></div>
-                    <p>Caricamento...</p>
-                </div>
-            </div>
-        )
-    }
+    if (!isLoaded) return null
 
     if (!user) {
         return (
-            <div className="dashboard-page">
-                <div className="bg-ambient"></div>
+            <div className="container">
                 <div className="auth-prompt">
-                    <div className="auth-icon">🎮</div>
-                    <h1>Il Gioco della Vita</h1>
-                    <p>Accedi per iniziare il tuo viaggio</p>
+                    <div className="auth-icon">🎯</div>
+                    <h1>La Mia Vita</h1>
+                    <p>Accedi per vedere la tua missione</p>
                     <Link href="/" className="btn-primary">Vai alla Home</Link>
                 </div>
+                <style jsx>{styles}</style>
             </div>
         )
     }
 
+    const userName = user?.firstName || 'Viaggiatore'
+
     return (
-        <div className="dashboard-page">
-            <div className="bg-ambient"></div>
+        <div className="container">
+            <div className="bg-gradient"></div>
+            <div className="bg-glow"></div>
 
-            {/* ══════════════════════════════════════════════════════════ */}
-            {/* TOPBAR */}
-            {/* ══════════════════════════════════════════════════════════ */}
-            <header className="topbar">
-                <div className="topbar-inner">
-                    <Link href="/" className="home-btn" title="Home">
-                        🏠
-                    </Link>
-                    <div className="player">
-                        <div className="level-badge">
-                            <div className="level-ring" style={{ '--progress': `${xpProgress}%` } as React.CSSProperties}></div>
-                            <div className="level-inner">
-                                <span className="level-num">{stats.level}</span>
-                            </div>
-                        </div>
-                        <div className="player-info">
-                            <div className="player-rank">{stats.rank_emoji} {stats.rank_name}</div>
-                            <div className="xp-row">
-                                <div className="xp-bar">
-                                    <div className="xp-fill" style={{ width: `${xpProgress}%` }}></div>
-                                </div>
-                                <span className="xp-text">{stats.xp}/{stats.xp_to_next}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="stats-row">
-                        <div className="streak">
-                            <span>🔥</span>
-                            <span>{stats.streak}</span>
-                        </div>
-                        <div className="lives">
-                            {[...Array(3)].map((_, i) => (
-                                <span key={i} className={`heart ${i >= stats.lives ? 'dead' : ''}`}>❤️</span>
-                            ))}
-                        </div>
-                        <UserButton afterSignOutUrl="/" />
-                    </div>
-                </div>
+            {/* Header */}
+            <header className="header">
+                <Link href="/" className="back">← Home</Link>
+                <h1 className="header-title">La Mia Vita</h1>
+                <UserButton afterSignOutUrl="/" />
             </header>
 
-            {/* ══════════════════════════════════════════════════════════ */}
-            {/* MAIN CONTENT */}
-            {/* ══════════════════════════════════════════════════════════ */}
-            <main className="main-content">
+            <main className="main">
+                {/* Greeting */}
+                <div className="greeting">
+                    <h2>{greeting}, <span className="name">{userName}</span></h2>
+                </div>
 
-                {/* TASK SECTION - con tabs DENTRO */}
-                {activeTask ? (
-                    <section className="task-section">
-                        <div className="task-hero">
-                            <div className="task-meta">
-                                <div className="task-badge">
-                                    <span className="dot"></span>
-                                    <span>Task Attiva</span>
-                                </div>
-                                <span className="task-chapter">
-                                    📍 {chapter?.title || 'Capitolo 1'}
-                                </span>
-                            </div>
-
-                            <h1 className="task-title">{activeTask.title}</h1>
-                            <p className="task-desc">{activeTask.description}</p>
-
-                            <div className="task-rewards">
-                                <div className="reward xp">
-                                    ✨ +{activeTask.xp_reward} XP
-                                </div>
-                                <div className="reward difficulty" style={{ '--diff-color': DIFFICULTY_CONFIG[activeTask.difficulty].color } as React.CSSProperties}>
-                                    ⚔️ {DIFFICULTY_CONFIG[activeTask.difficulty].label}
-                                </div>
-                                <div className="reward time">
-                                    ⏱️ ~{activeTask.estimated_minutes} min
-                                </div>
-                            </div>
-
-                            <div className="task-actions">
-                                <button className="btn btn-complete" onClick={completeTask}>
-                                    ✓ HO FINITO
-                                </button>
-                                <button className="btn btn-skip" onClick={skipTask}>
-                                    Salta →
-                                </button>
-                                <Link href="/chat" className="btn btn-nur">
-                                    💬 Chiedi a NUR
-                                </Link>
-                            </div>
-                        </div>
-
-                        {/* TABS - DENTRO la task section */}
-                        <div className="panels-tabs">
-                            <button
-                                className={`panel-tab ${activePanel === 'scrivania' ? 'active' : ''}`}
-                                onClick={() => togglePanel('scrivania')}
-                            >
-                                <span>📁</span>
-                                <span>Scrivania</span>
-                            </button>
-                            <button
-                                className={`panel-tab ${activePanel === 'dashboard' ? 'active' : ''}`}
-                                onClick={() => togglePanel('dashboard')}
-                            >
-                                <span>📊</span>
-                                <span>Dashboard</span>
-                            </button>
-                            <button
-                                className={`panel-tab ${activePanel === 'note' ? 'active' : ''}`}
-                                onClick={() => togglePanel('note')}
-                            >
-                                <span>📝</span>
-                                <span>Note</span>
-                            </button>
-                        </div>
-
-                        {/* PANEL CONTENT */}
-                        {activePanel === 'scrivania' && (
-                            <div className="panel-content">
-                                <div className="materials-list">
-                                    {materials.length > 0 ? materials.map(m => (
-                                        <Link key={m.id} href="/giornale" className="material-item">
-                                            <div className="material-icon">📄</div>
-                                            <div className="material-info">
-                                                <div className="material-name">{m.title || 'Senza titolo'}</div>
-                                                <div className="material-desc">{m.content?.slice(0, 50)}...</div>
-                                            </div>
-                                        </Link>
-                                    )) : (
-                                        <div className="empty-state">
-                                            <p>Nessun materiale ancora</p>
-                                            <Link href="/chat" className="btn btn-ghost">Chiedi a NUR</Link>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {activePanel === 'dashboard' && (
-                            <div className="panel-content">
-                                <div className="dash-grid">
-                                    <div className="dash-stat">
-                                        <div className="dash-stat-label">Task Completate</div>
-                                        <div className="dash-stat-value">{completedTasks}/{totalTasks}</div>
-                                    </div>
-                                    <div className="dash-stat">
-                                        <div className="dash-stat-label">XP Totali</div>
-                                        <div className="dash-stat-value">{stats.xp.toLocaleString()}</div>
-                                    </div>
-                                    <div className="dash-stat">
-                                        <div className="dash-stat-label">Streak</div>
-                                        <div className="dash-stat-value">🔥 {stats.streak}</div>
-                                    </div>
-                                    <div className="dash-stat">
-                                        <div className="dash-stat-label">Livello</div>
-                                        <div className="dash-stat-value">Lv.{stats.level}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {activePanel === 'note' && (
-                            <div className="panel-content">
-                                <textarea
-                                    className="notes-area"
-                                    placeholder="Scrivi qui le tue note per questa task..."
-                                    value={taskNotes}
-                                    onChange={(e) => setTaskNotes(e.target.value)}
-                                />
-                                <button className="btn btn-ghost" onClick={saveNotes}>
-                                    Salva Note
-                                </button>
-                            </div>
-                        )}
-                    </section>
-                ) : (
-                    <section className="no-task-section">
+                {/* ═══════════════════════════════════════════
+                    STATO 0: EMPTY - Nessuna missione
+                ═══════════════════════════════════════════ */}
+                {phase === 'empty' && (
+                    <section className="empty-state">
                         <div className="empty-icon">🎯</div>
-                        <h2>Nessuna task attiva</h2>
-                        <p>Parla con NUR per definire il tuo obiettivo!</p>
-                        <Link href="/chat" className="btn btn-nur">
+                        <h3>Qual è il tuo obiettivo?</h3>
+                        <p>NUR ti aiuterà a scoprirlo e raggiungerlo.</p>
+                        <Link href="/chat" className="btn-primary">
                             💬 Parla con NUR
                         </Link>
                     </section>
                 )}
 
-                {/* ══════════════════════════════════════════════════════════ */}
-                {/* CARDS GRID */}
-                {/* ══════════════════════════════════════════════════════════ */}
-                <div className="cards-grid">
-
-                    {/* CHAPTER PROGRESS */}
-                    {tasks.length > 0 && (
-                        <div className="card">
-                            <div className="card-header">
-                                <div>
-                                    <div className="card-label">CAPITOLO 1</div>
-                                    <div className="card-title">{chapter?.title || 'Il tuo percorso'}</div>
-                                </div>
-                                <div className="card-pct">{chapterProgress}%</div>
-                            </div>
-
-                            <div className="progress-bar">
-                                <div className="progress-bar-fill" style={{ width: `${chapterProgress}%` }}></div>
-                            </div>
-
-                            <div className="objectives-list">
-                                {tasks.map((task) => (
-                                    <div key={task.id} className="obj-item">
-                                        <div className={`obj-check ${task.displayStatus}`}>
-                                            {task.displayStatus === 'done' && '✓'}
-                                            {task.displayStatus === 'current' && '●'}
-                                            {task.displayStatus === 'locked' && '🔒'}
-                                        </div>
-                                        <span className={`obj-text ${task.displayStatus}`}>
-                                            {task.title}
-                                        </span>
-                                        {task.displayStatus === 'current' && (
-                                            <span className="obj-badge">ATTIVA</span>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* JOURNEY */}
-                    <div className="card">
-                        <div className="card-header">
-                            <div>
-                                <div className="card-label">IL TUO</div>
-                                <div className="card-title">Viaggio</div>
-                            </div>
-                        </div>
-
-                        <div className="journey">
-                            <div className="journey-line"></div>
-                            <div className="journey-fill" style={{ width: `${Math.min(90, chapterProgress * 0.9)}%` }}></div>
-
-                            {tasks.slice(0, 4).map((task, i) => (
-                                <div key={task.id} className={`journey-node ${task.displayStatus}`}>
-                                    {task.displayStatus === 'done' ? '✓' : i + 1}
-                                </div>
-                            ))}
-
-                            {/* Destination node */}
-                            <div className={`journey-node destination ${isDestinationUnlocked ? 'unlocked' : 'locked'}`}>
-                                {isDestinationUnlocked ? '🏆' : '🎯'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ══════════════════════════════════════════════════════════ */}
-                {/* DESTINATION CARD */}
-                {/* ══════════════════════════════════════════════════════════ */}
-                {mission && (
-                    <div className={`mission-card ${isDestinationUnlocked ? 'unlocked' : 'locked'}`}>
-                        <div className="mission-icon">
-                            {isDestinationUnlocked ? '🏆' : '🎯'}
-                        </div>
-                        <div className="mission-label">
-                            {isDestinationUnlocked ? 'OBIETTIVO RAGGIUNTO!' : 'DESTINAZIONE FINALE'}
-                        </div>
-                        <div className="mission-title">{mission.title}</div>
-                        <div className="mission-sub">
-                            {completedTasks} / {totalTasks} task completate
-                        </div>
-                        <div className="mission-progress">
-                            <div className="mission-progress-fill" style={{ width: `${chapterProgress}%` }}></div>
-                        </div>
-                        <div className="mission-pct">{chapterProgress}%</div>
-                        {!isDestinationUnlocked && (
-                            <div className="mission-hint">
-                                🔒 Completa tutte le task per sbloccare
-                            </div>
+                {/* ═══════════════════════════════════════════
+                    STATO 1: MISSION_ONLY - Ha missione ma no capitoli
+                ═══════════════════════════════════════════ */}
+                {phase === 'mission_only' && mission && (
+                    <section className="mission-card solo">
+                        <div className="mission-badge">🎯 LA TUA MISSIONE</div>
+                        <h3 className="mission-title">{mission.title}</h3>
+                        {mission.description && (
+                            <p className="mission-desc">{mission.description}</p>
                         )}
-                    </div>
+                        <div className="progress-bar">
+                            <div className="progress-fill" style={{ width: '0%' }}></div>
+                        </div>
+                        <div className="progress-label">0%</div>
+
+                        <div className="cta-box">
+                            <p className="cta-text">Serve un piano per iniziare</p>
+                            <Link href="/chat" className="btn-primary">
+                                💬 Crea il piano con NUR
+                            </Link>
+                        </div>
+                    </section>
                 )}
 
+                {/* ═══════════════════════════════════════════
+                    STATI 2-3: Ha capitoli (con o senza task)
+                ═══════════════════════════════════════════ */}
+                {(phase === 'has_chapters' || phase === 'has_steps' || phase === 'complete') && mission && (
+                    <>
+                        {/* TASK HERO - Solo se c'è una task attiva */}
+                        {activeTask && (
+                            <section className="task-hero">
+                                <div className="task-badge">🔥 LA TUA TASK</div>
+
+                                <h3 className="task-title">{activeTask.title}</h3>
+
+                                {activeTask.description && (
+                                    <p className="task-desc">{activeTask.description}</p>
+                                )}
+
+                                {activeStep && (
+                                    <div className="task-context">
+                                        📍 Step {currentStepIndex} di {stepsInChapter.length} · {activeStep.title}
+                                    </div>
+                                )}
+
+                                <div className="task-actions">
+                                    <button className="btn-success" onClick={handleCompleteTask}>
+                                        ✅ FATTO!
+                                    </button>
+                                    <Link href="/chat" className="btn-ghost">
+                                        💬 Aiuto
+                                    </Link>
+                                </div>
+                            </section>
+                        )}
+
+                        {/* CTA se mancano step o task */}
+                        {!activeTask && (
+                            <section className="cta-card">
+                                <div className="cta-icon">⚠️</div>
+                                <p className="cta-message">
+                                    {phase === 'has_chapters' && activeChapter
+                                        ? `Scomponi "${activeChapter.title}" in step`
+                                        : phase === 'has_steps' && activeStep
+                                            ? `Crea una task per "${activeStep.title}"`
+                                            : 'Configura il prossimo passo'}
+                                </p>
+                                <Link href="/chat" className="btn-primary">
+                                    💬 Definisci con NUR
+                                </Link>
+                            </section>
+                        )}
+
+                        {/* CHAPTER PROGRESS - Timeline orizzontale */}
+                        {activeChapter && stepsInChapter.length > 0 && (
+                            <section className="chapter-progress">
+                                <div className="chapter-header">
+                                    <span className="chapter-badge">📋 CAPITOLO {chapters.findIndex(c => c.id === activeChapter.id) + 1}</span>
+                                    <span className="chapter-title">{activeChapter.title}</span>
+                                </div>
+
+                                <div className="steps-timeline">
+                                    {stepsInChapter.map((step, idx) => {
+                                        const state = getDisplayState(step, chain)
+                                        return (
+                                            <div key={step.id} className="step-node-wrapper">
+                                                {idx > 0 && (
+                                                    <div className={`step-line ${state === 'done' || (idx < currentStepIndex - 1) ? 'done' : ''}`}></div>
+                                                )}
+                                                <div className={`step-node ${state}`}>
+                                                    {state === 'done' ? '✓' : state === 'current' ? '◉' : '○'}
+                                                </div>
+                                                <div className={`step-label ${state}`}>
+                                                    {step.title.length > 15 ? step.title.slice(0, 15) + '...' : step.title}
+                                                </div>
+                                                {state === 'current' && (
+                                                    <div className="step-indicator">↑ SEI QUI</div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* MISSION BAR - Panoramica capitoli */}
+                        <section className="mission-bar">
+                            <div className="mission-header">
+                                <span className="mission-badge">🎯 MISSIONE</span>
+                                <span className="mission-title-small">{mission.title}</span>
+                            </div>
+
+                            <div className="chapters-grid">
+                                {chapters.map((ch, idx) => {
+                                    const state = getDisplayState(ch, chain)
+                                    return (
+                                        <div key={ch.id} className={`chapter-block ${state}`}>
+                                            <div className="chapter-icon">
+                                                {state === 'done' ? '✅' : state === 'current' ? '◉' : '🔒'}
+                                            </div>
+                                            <div className="chapter-num">Cap {idx + 1}</div>
+                                        </div>
+                                    )
+                                })}
+                                <div className="chapter-block final">
+                                    <div className="chapter-icon">🏆</div>
+                                    <div className="chapter-num">Fine</div>
+                                </div>
+                            </div>
+
+                            <div className="mission-progress">
+                                <div className="progress-bar">
+                                    <div
+                                        className="progress-fill"
+                                        style={{ width: `${missionProgress}%` }}
+                                    ></div>
+                                </div>
+                                <span className="progress-percent">{missionProgress}%</span>
+                            </div>
+                        </section>
+                    </>
+                )}
+
+                {/* Quick Link to Scrivania */}
+                <Link href="/giornale" className="scrivania-link">
+                    <span className="scrivania-icon">📚</span>
+                    <span className="scrivania-text">Vai alla Scrivania</span>
+                    <span className="scrivania-arrow">→</span>
+                </Link>
             </main>
 
-            {/* ══════════════════════════════════════════════════════════ */}
-            {/* BOTTOM NAV - 4 ITEMS */}
-            {/* ══════════════════════════════════════════════════════════ */}
+            {/* Bottom Navigation */}
             <nav className="bottom-nav">
-                <Link href="/la-mia-vita" className="nav-item active">
-                    <span className="nav-icon">📖</span>
-                    <span className="nav-label">Storia</span>
+                <Link href="/" className="nav-item">
+                    <span className="nav-icon">🏠</span>
+                    <span className="nav-label">Home</span>
                 </Link>
                 <Link href="/chat" className="nav-item">
                     <span className="nav-icon">💬</span>
                     <span className="nav-label">NUR</span>
                 </Link>
-                <Link href="/calendario" className="nav-item">
-                    <span className="nav-icon">📅</span>
-                    <span className="nav-label">Calendario</span>
-                </Link>
-                <Link href="/giornale" className="nav-item">
+                <Link href="/la-mia-vita" className="nav-item active">
                     <span className="nav-icon">📊</span>
-                    <span className="nav-label">Stats</span>
+                    <span className="nav-label">Dashboard</span>
+                </Link>
+                <Link href="/profilo" className="nav-item">
+                    <span className="nav-icon">👤</span>
+                    <span className="nav-label">Profilo</span>
                 </Link>
             </nav>
 
-            {/* ══════════════════════════════════════════════════════════ */}
-            {/* COMPLETION MODAL */}
-            {/* ══════════════════════════════════════════════════════════ */}
-            {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-emoji">
-                            {modalData.levelUp ? '⬆️' : '🎉'}
-                        </div>
-                        <h2 className="modal-title">
-                            {modalData.levelUp ? 'Level Up!' : 'Task Completata!'}
-                        </h2>
-                        <div className="modal-xp">+{modalData.xp} XP</div>
-                        <div className="modal-streak">🔥 Streak: {modalData.streak} giorni!</div>
-                        <button className="modal-btn" onClick={() => setShowModal(false)}>
-                            Continua
-                        </button>
-                    </div>
-                </div>
-            )}
+            <style jsx>{styles}</style>
         </div>
     )
 }
+
+// ============================================
+// STYLES
+// ============================================
+
+const styles = `
+    .container {
+        min-height: 100vh;
+        background: #050510;
+        color: #fff;
+        padding-bottom: 100px;
+        position: relative;
+        overflow-x: hidden;
+    }
+
+    .bg-gradient {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background:
+            radial-gradient(ellipse at 30% 20%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 70% 80%, rgba(118, 75, 162, 0.1) 0%, transparent 50%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .bg-glow {
+        position: fixed;
+        top: 100px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 600px;
+        height: 400px;
+        background: radial-gradient(ellipse, rgba(102, 126, 234, 0.08) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    /* Header */
+    .header {
+        position: sticky;
+        top: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        background: rgba(5, 5, 16, 0.9);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        z-index: 100;
+    }
+
+    .back {
+        color: rgba(255,255,255,0.5);
+        text-decoration: none;
+        font-size: 14px;
+    }
+
+    .header-title {
+        font-size: 18px;
+        font-weight: 600;
+    }
+
+    /* Main */
+    .main {
+        position: relative;
+        z-index: 1;
+        padding: 24px 20px;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .greeting {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+
+    .greeting h2 {
+        font-size: 26px;
+        font-weight: 400;
+        color: rgba(255,255,255,0.9);
+    }
+
+    .greeting .name {
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 60px 24px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 24px;
+    }
+
+    .empty-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    .empty-state h3 {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .empty-state p {
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 28px;
+    }
+
+    /* Mission Card (solo) */
+    .mission-card.solo {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        border-radius: 20px;
+        padding: 24px;
+        text-align: center;
+    }
+
+    .mission-badge {
+        font-size: 11px;
+        font-weight: 700;
+        color: #667eea;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+    }
+
+    .mission-title {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .mission-desc {
+        font-size: 14px;
+        color: rgba(255,255,255,0.6);
+        margin-bottom: 20px;
+    }
+
+    .progress-bar {
+        height: 8px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border-radius: 4px;
+        transition: width 0.5s ease;
+    }
+
+    .progress-label {
+        font-size: 14px;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .cta-box {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .cta-text {
+        color: rgba(255,255,255,0.6);
+        margin-bottom: 16px;
+        font-size: 14px;
+    }
+
+    /* CTA Card */
+    .cta-card {
+        background: rgba(255, 200, 50, 0.1);
+        border: 1px solid rgba(255, 200, 50, 0.3);
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .cta-icon {
+        font-size: 32px;
+        margin-bottom: 12px;
+    }
+
+    .cta-message {
+        color: rgba(255,255,255,0.8);
+        margin-bottom: 16px;
+    }
+
+    /* Task Hero */
+    .task-hero {
+        background: linear-gradient(135deg, rgba(255, 146, 43, 0.15) 0%, rgba(255, 107, 107, 0.15) 100%);
+        border: 1px solid rgba(255, 146, 43, 0.3);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+
+    .task-badge {
+        font-size: 11px;
+        font-weight: 700;
+        color: #ff922b;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+
+    .task-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .task-desc {
+        font-size: 14px;
+        color: rgba(255,255,255,0.6);
+        line-height: 1.5;
+        margin-bottom: 12px;
+    }
+
+    .task-context {
+        font-size: 13px;
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 20px;
+    }
+
+    .task-actions {
+        display: flex;
+        gap: 12px;
+    }
+
+    /* Chapter Progress */
+    .chapter-progress {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .chapter-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .chapter-badge {
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(255,255,255,0.5);
+        letter-spacing: 1px;
+    }
+
+    .chapter-title {
+        font-size: 14px;
+        color: rgba(255,255,255,0.8);
+    }
+
+    .steps-timeline {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        position: relative;
+        padding: 0 10px;
+    }
+
+    .step-node-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 1;
+    }
+
+    .step-line {
+        position: absolute;
+        top: 12px;
+        right: 50%;
+        width: 100%;
+        height: 2px;
+        background: rgba(255,255,255,0.1);
+    }
+
+    .step-line.done {
+        background: #51cf66;
+    }
+
+    .step-node {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        position: relative;
+        z-index: 2;
+        background: #050510;
+    }
+
+    .step-node.done {
+        background: #51cf66;
+        color: #fff;
+    }
+
+    .step-node.current {
+        background: #667eea;
+        color: #fff;
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+    }
+
+    .step-node.locked {
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.3);
+    }
+
+    .step-label {
+        font-size: 11px;
+        margin-top: 8px;
+        text-align: center;
+        color: rgba(255,255,255,0.5);
+        max-width: 80px;
+    }
+
+    .step-label.current {
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    .step-label.done {
+        color: #51cf66;
+    }
+
+    .step-indicator {
+        font-size: 10px;
+        color: #667eea;
+        margin-top: 4px;
+        font-weight: 600;
+    }
+
+    /* Mission Bar */
+    .mission-bar {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .mission-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .mission-title-small {
+        font-size: 14px;
+        color: rgba(255,255,255,0.8);
+    }
+
+    .chapters-grid {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+
+    .chapter-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+        min-width: 60px;
+    }
+
+    .chapter-block.done {
+        background: rgba(81, 207, 102, 0.15);
+    }
+
+    .chapter-block.current {
+        background: rgba(102, 126, 234, 0.2);
+        border: 1px solid rgba(102, 126, 234, 0.4);
+    }
+
+    .chapter-block.locked {
+        opacity: 0.4;
+    }
+
+    .chapter-block.final {
+        background: rgba(255, 200, 50, 0.1);
+    }
+
+    .chapter-icon {
+        font-size: 18px;
+        margin-bottom: 4px;
+    }
+
+    .chapter-num {
+        font-size: 11px;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .mission-progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .mission-progress .progress-bar {
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+    .progress-percent {
+        font-size: 14px;
+        font-weight: 600;
+        color: #667eea;
+        min-width: 40px;
+    }
+
+    /* Scrivania Link */
+    .scrivania-link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        text-decoration: none;
+        color: rgba(255,255,255,0.7);
+        transition: all 0.2s;
+    }
+
+    .scrivania-link:hover {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(102, 126, 234, 0.3);
+    }
+
+    .scrivania-icon {
+        font-size: 24px;
+    }
+
+    .scrivania-text {
+        flex: 1;
+        font-size: 15px;
+    }
+
+    .scrivania-arrow {
+        color: rgba(255,255,255,0.3);
+    }
+
+    /* Buttons */
+    .btn-primary {
+        display: inline-block;
+        padding: 14px 28px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff;
+        border: none;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-success {
+        flex: 1;
+        padding: 16px;
+        background: linear-gradient(135deg, #51cf66, #40c057);
+        color: #fff;
+        border: none;
+        border-radius: 14px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(81, 207, 102, 0.4);
+    }
+
+    .btn-ghost {
+        flex: 1;
+        padding: 16px;
+        background: transparent;
+        color: rgba(255,255,255,0.7);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 14px;
+        font-size: 14px;
+        text-decoration: none;
+        text-align: center;
+        transition: all 0.2s;
+    }
+
+    .btn-ghost:hover {
+        background: rgba(255,255,255,0.05);
+    }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-around;
+        padding: 12px 0;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        background: rgba(5, 5, 16, 0.95);
+        backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(255,255,255,0.08);
+        z-index: 1000;
+    }
+
+    .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 24px;
+        color: rgba(255,255,255,0.4);
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+
+    .nav-item.active {
+        color: #667eea;
+    }
+
+    .nav-icon {
+        font-size: 22px;
+    }
+
+    .nav-label {
+        font-size: 11px;
+        font-weight: 500;
+    }
+
+    /* Auth Prompt */
+    .auth-prompt {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+        padding: 40px;
+    }
+
+    .auth-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    .auth-prompt h1 {
+        font-size: 28px;
+        margin-bottom: 12px;
+    }
+
+    .auth-prompt p {
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 28px;
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+        .main {
+            padding: 16px;
+        }
+
+        .greeting h2 {
+            font-size: 22px;
+        }
+
+        .task-actions {
+            flex-direction: column;
+        }
+
+        .chapters-grid {
+            gap: 6px;
+        }
+
+        .chapter-block {
+            padding: 10px 12px;
+            min-width: 50px;
+        }
+    }
+`

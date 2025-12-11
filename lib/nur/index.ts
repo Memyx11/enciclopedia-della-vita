@@ -7,6 +7,7 @@
 export * from './personality'
 export * from './memory'
 export * from './journal'
+export * from './mission'
 
 // Main NUR interface
 import Anthropic from '@anthropic-ai/sdk'

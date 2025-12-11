@@ -73,7 +73,7 @@ export default function SoluzioniPage() {
             <header>
                 <div className="header-content">
                     <Link href="/" className="logo">📖 Enciclopedia della Vita</Link>
-                    <Link href="/dashboard" className="back-link">← Dashboard</Link>
+                    <Link href="/la-mia-vita" className="back-link">← Dashboard</Link>
                 </div>
             </header>
 
@@ -85,7 +85,7 @@ export default function SoluzioniPage() {
 
                 <div className="nav-buttons">
                     <Link href="/chat" className="nav-btn">🤖 Chatbot</Link>
-                    <Link href="/dashboard" className="nav-btn">📊 Dashboard</Link>
+                    <Link href="/la-mia-vita" className="nav-btn">📊 Dashboard</Link>
                     <Link href="/" className="nav-btn">📖 Enciclopedia</Link>
                 </div>
 

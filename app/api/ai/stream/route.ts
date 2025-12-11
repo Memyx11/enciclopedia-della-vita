@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
 import { generateNurPrompt, UserContext } from '@/lib/nur/personality'
+import { getMissionPhase, buildMissionContext } from '@/lib/nur/mission'
 
 // ============================================
 // KEYWORDS PER ROUTING → SONNET
@@ -22,40 +23,44 @@ const ACTION_KEYWORDS = [
     'registra', 'annota', 'segna', 'inserisci',
     // Per sistema missione
     'missione', 'problema', 'paura', 'desiderio', 'forza', 'debolezza',
-    'insight', 'progress', 'avanzamento',
-    // Per conferme - attivano Sonnet quando l'utente conferma
-    'dashboard', 'fallo', 'salvalo', 'ok fallo', 'sì fallo'
+    'insight', 'progress', 'avanzamento', 'capitolo', 'step',
+    // Per conferme
+    'dashboard', 'fallo', 'salvalo', 'ok fallo', 'sì fallo',
+    // Per inserimento esplicito
+    'macro', 'nuovo obiettivo', 'nuova missione', 'indipendente', '3000', 'mese'
 ]
 
-// Messaggi di conferma brevi che richiedono contesto dalla conversazione
 const CONFIRMATION_PATTERNS = [
-    /^s[iì]!?$/i,           // "sì", "si", "si!", "sì!"
-    /^ok!?$/i,              // "ok", "ok!"
-    /^va bene!?$/i,         // "va bene"
-    /^fallo!?$/i,           // "fallo"
-    /^salvalo!?$/i,         // "salvalo"
-    /^perfetto!?$/i,        // "perfetto"
-    /^procedi!?$/i,         // "procedi"
-    /^certo!?$/i            // "certo"
+    /^s[iì]!?$/i,
+    /^ok!?$/i,
+    /^va bene!?$/i,
+    /^fallo!?$/i,
+    /^salvalo!?$/i,
+    /^perfetto!?$/i,
+    /^procedi!?$/i,
+    /^certo!?$/i,
+    /^dai!?$/i,
+    /^facciamolo!?$/i
 ]
 
 function needsSonnet(message: string, history?: any[]): boolean {
     const lowerMsg = message.toLowerCase().trim()
 
-    // Check action keywords
     if (ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))) {
         return true
     }
 
-    // Check confirmation patterns (solo se c'è una storia di conversazione)
     if (history && history.length > 0) {
         if (CONFIRMATION_PATTERNS.some(pattern => pattern.test(lowerMsg))) {
-            // Verifica se NUR ha chiesto qualcosa tipo "vuoi che lo salvi?"
             const lastNurMessage = [...history].reverse().find(m => m.role === 'assistant')?.content?.toLowerCase() || ''
             if (lastNurMessage.includes('salv') ||
                 lastNurMessage.includes('dashboard') ||
                 lastNurMessage.includes('vuoi che') ||
-                lastNurMessage.includes('lo faccio')) {
+                lastNurMessage.includes('lo faccio') ||
+                lastNurMessage.includes('aggiungo') ||
+                lastNurMessage.includes('creo') ||
+                lastNurMessage.includes('capitoli') ||
+                lastNurMessage.includes('step')) {
                 return true
             }
         }
@@ -65,51 +70,73 @@ function needsSonnet(message: string, history?: any[]): boolean {
 }
 
 // ============================================
-// PROMPT SONNET - Solo azioni
-// (Haiku ora usa generateNurPrompt dalla personality.ts)
+// PROMPT SONNET - Azioni + Costruzione Missione
+// (Haiku usa generateNurPrompt dalla personality.ts)
 // ============================================
 
-const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. DEVI SEMPRE eseguire il comando quando l'utente conferma.
+const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Il tuo compito è INSERIRE DATI nel database usando i comandi.
 
-⚠️ REGOLA FONDAMENTALE: Quando l'utente dice "sì", "ok", "fallo", "salvalo" o conferma in qualsiasi modo, DEVI OBBLIGATORIAMENTE includere i comandi tra parentesi quadre. MAI rispondere solo con testo se l'utente ha chiesto di salvare/creare qualcosa.
+## FASE ATTUALE: {MISSION_PHASE}
 
-COMANDI DISPONIBILI:
+## REGOLA CRITICA - LEGGI ATTENTAMENTE:
 
-CONTENUTI:
-[SAVE:tipo|titolo|contenuto] = salva nella Scrivania (tipo: guide, article, resource)
-[TASK:area|titolo] = aggiunge task
-[MEMORY:fact|contenuto] = ricorda fatto
+Quando l'utente ti chiede di creare/inserire/salvare qualcosa, DEVI includere il comando appropriato nella tua risposta.
+I comandi hanno questo formato: [COMANDO:parametro1|parametro2|...]
+Il sistema backend legge questi comandi e li esegue. Se non li includi, NON viene salvato nulla!
 
-SISTEMA DASHBOARD:
-[MISSION:titolo|descrizione|motivazione] = OBBLIGATORIO - crea missione nella dashboard
-[OBJECTIVE:major|mission|titolo|aree] = obiettivo principale (parent è sempre "mission")
-[OBJECTIVE:sub|nome_parent|titolo|aree] = sotto-obiettivo
-[OBJECTIVE:task|nome_parent|titolo|aree] = task
+## ESEMPI CORRETTI:
 
-Aree: salute, soldi, relazioni, lavoro, hobby, crescita
+Utente: "Inserisci come missione diventare indipendente con 3000€/mese"
+TU DEVI rispondere:
+"Perfetto! Inserisco la tua missione. 🎯
 
-⚠️ QUANDO L'UTENTE CONFERMA (sì, ok, salvalo, fallo):
-DEVI SEMPRE generare i comandi! Esempio:
+[MISSION:Indipendenza finanziaria - 3000€/mese|Costruire un'attività che generi 3000€ mensili ricorrenti|Libertà economica e controllo del proprio tempo]
 
-User: "voglio migliorare le mie finanze"
-NUR: "Perfetto! Vuoi che lo salvi nella dashboard?"
-User: "sì"
-NUR: "[MISSION:Migliorare le Finanze|Raggiungere stabilità economica|Per vivere serenamente] [OBJECTIVE:major|mission|Aumentare entrate|soldi] [OBJECTIVE:major|mission|Ridurre spese|soldi] Fatto! Ho salvato la missione nella dashboard con i primi obiettivi."
+Fatto! Ora creiamo i capitoli per raggiungere questo obiettivo. Quali sono i macro-step che vedi?"
 
-ALTRO ESEMPIO:
-User: "sì salvalo" oppure "si!"
-NUR: "[MISSION:...] [OBJECTIVE:...] Perfetto, salvato!"
+Utente: "Crea i capitoli: 1. Validare idea 2. Primi clienti 3. Scalare"
+TU DEVI rispondere:
+"Li aggiungo subito! 📋
+
+[CHAPTER:Validare l'idea|Testare il mercato prima di investire tempo e risorse]
+[CHAPTER:Primi 10 clienti|Acquisire i primi clienti paganti per validare il prodotto]
+[CHAPTER:Scalare il business|Automatizzare e crescere in modo sostenibile]
+
+Perfetto, tre capitoli solidi. Iniziamo dal primo?"
+
+## COMANDI DISPONIBILI:
+
+[MISSION:titolo|descrizione|perché] - Crea la missione principale
+[CHAPTER:titolo|descrizione] - Crea un capitolo (macro-obiettivo)
+[STEP:titolo_capitolo|titolo|descrizione] - Crea uno step dentro un capitolo
+[TASK:titolo_step|titolo|descrizione] - Crea una task dentro uno step
+[COMPLETE:titolo] - Marca come completato
+[INSIGHT:tipo|contenuto] - Salva un insight (problem/desire/fear/strength)
+[MEMORY:tipo|contenuto] - Salva una memoria sull'utente
+
+## COMPORTAMENTO PER FASE:
+
+- **DISCOVERY**: Raccogli info, usa [INSIGHT:...] per salvare
+- **MISSION**: Proponi e poi USA [MISSION:...] per creare
+- **CHAPTERS**: Proponi e poi USA [CHAPTER:...] per ogni capitolo
+- **STEPS**: Proponi e poi USA [STEP:...] per ogni step
+- **TASK**: Proponi e poi USA [TASK:...] per la task
+- **ACTIVE**: Supporta, usa [COMPLETE:...] quando finito
+
+## CONTESTO ATTUALE:
 
 {USER_CONTEXT}
 
-CONVERSAZIONE RECENTE:
+{MISSION_CONTEXT}
+
+## CONVERSAZIONE RECENTE:
 {RECENT_MESSAGES}
 
-RICORDA: Se l'utente ha confermato, INCLUDI I COMANDI. Non rispondere mai solo con testo.
-Rispondi in italiano.`
+IMPORTANTE: Quando l'utente chiede di inserire/creare/salvare, INCLUDI SEMPRE I COMANDI nella risposta!
+Rispondi in italiano, breve e diretto.`
 
 // ============================================
-// HELPER: Costruisci contesto utente COMPLETO
+// HELPER: Costruisci contesto utente COMPLETO (per generateNurPrompt)
 // ============================================
 
 async function buildUserContext(userId: string): Promise<UserContext> {
@@ -209,53 +236,230 @@ function contextToString(ctx: UserContext): string {
 // ============================================
 
 async function executeActions(text: string, userId: string): Promise<void> {
-    // Parse [TASK:area|titolo]
-    const taskMatch = text.match(/\[TASK:(\w+)\|([^\]]+)\]/)
-    if (taskMatch) {
-        const [, area, title] = taskMatch
+    // Parse [INSIGHT:tipo|contenuto]
+    const insightMatches = text.matchAll(/\[INSIGHT:(\w+)\|([^\]]+)\]/g)
+    for (const match of insightMatches) {
+        const [, category, content] = match
         try {
-            const { data: areaData } = await supabase
-                .from('life_areas')
-                .select('active_tasks')
+            await supabase.from('user_insights').insert({
+                clerk_user_id: userId,
+                category: category.trim(),
+                content: content.trim(),
+                importance: 7,
+                used_for_mission: false
+            })
+            console.log(`[NUR Action] Insight salvato: ${category} - ${content}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Insight:', e)
+        }
+    }
+
+    // Parse [MISSION:title|description|why]
+    const missionMatch = text.match(/\[MISSION:([^|]+)\|([^|]+)\|([^\]]+)\]/)
+    if (missionMatch) {
+        const [, title, description, why] = missionMatch
+        try {
+            // Prima marca gli insight come usati
+            await supabase
+                .from('user_insights')
+                .update({ used_for_mission: true })
                 .eq('clerk_user_id', userId)
-                .eq('area_type', area)
+                .eq('used_for_mission', false)
+
+            // Crea/aggiorna missione
+            await supabase.from('user_mission').upsert({
+                clerk_user_id: userId,
+                title: title.trim(),
+                description: description.trim(),
+                why: why.trim(),
+                status: 'active',
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'clerk_user_id' })
+            console.log(`[NUR Action] Missione creata: ${title}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Mission:', e)
+        }
+    }
+
+    // Parse [CHAPTER:title|description]
+    const chapterMatches = text.matchAll(/\[CHAPTER:([^|]+)\|([^\]]+)\]/g)
+    let chapterIndex = 0
+    for (const match of chapterMatches) {
+        const [, title, description] = match
+        try {
+            // Trova mission_id
+            const { data: mission } = await supabase
+                .from('user_mission')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('status', 'active')
                 .single()
 
-            const existingTasks = Array.isArray(areaData?.active_tasks) ? areaData.active_tasks : []
-            await supabase
-                .from('life_areas')
-                .update({
-                    active_tasks: [...existingTasks, {
-                        id: crypto.randomUUID(),
-                        title: title.trim(),
-                        priority: 'medium',
-                        completed: false,
-                        created_at: new Date().toISOString()
-                    }]
+            if (mission) {
+                // Conta capitoli esistenti
+                const { count } = await supabase
+                    .from('objectives')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clerk_user_id', userId)
+                    .eq('mission_id', mission.id)
+                    .eq('level', 'major')
+
+                await supabase.from('objectives').insert({
+                    clerk_user_id: userId,
+                    mission_id: mission.id,
+                    level: 'major',
+                    title: title.trim(),
+                    description: description.trim(),
+                    status: (count || 0) === 0 && chapterIndex === 0 ? 'active' : 'pending',
+                    progress: 0,
+                    sort_order: (count || 0) + chapterIndex + 1
                 })
+                console.log(`[NUR Action] Capitolo creato: ${title}`)
+                chapterIndex++
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] Chapter:', e)
+        }
+    }
+
+    // Parse [STEP:parent_title|title|description]
+    const stepMatches = text.matchAll(/\[STEP:([^|]+)\|([^|]+)\|([^\]]+)\]/g)
+    let stepIndex = 0
+    for (const match of stepMatches) {
+        const [, parentTitle, title, description] = match
+        try {
+            // Trova parent (capitolo)
+            const { data: parent } = await supabase
+                .from('objectives')
+                .select('id, mission_id')
                 .eq('clerk_user_id', userId)
-                .eq('area_type', area)
-            console.log(`[NUR Action] Task aggiunta: ${title} in ${area}`)
+                .eq('title', parentTitle.trim())
+                .eq('level', 'major')
+                .single()
+
+            if (parent) {
+                // Conta step esistenti
+                const { count } = await supabase
+                    .from('objectives')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('parent_id', parent.id)
+                    .eq('level', 'sub')
+
+                await supabase.from('objectives').insert({
+                    clerk_user_id: userId,
+                    mission_id: parent.mission_id,
+                    parent_id: parent.id,
+                    level: 'sub',
+                    title: title.trim(),
+                    description: description.trim(),
+                    status: (count || 0) === 0 && stepIndex === 0 ? 'active' : 'pending',
+                    progress: 0,
+                    sort_order: (count || 0) + stepIndex + 1
+                })
+                console.log(`[NUR Action] Step creato: ${title}`)
+                stepIndex++
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] Step:', e)
+        }
+    }
+
+    // Parse [TASK:parent_title|title|description]
+    const taskMatches = text.matchAll(/\[TASK:([^|]+)\|([^|]+)\|([^\]]+)\]/g)
+    let taskIndex = 0
+    for (const match of taskMatches) {
+        const [, parentTitle, title, description] = match
+        try {
+            // Trova parent (step)
+            const { data: parent } = await supabase
+                .from('objectives')
+                .select('id, mission_id')
+                .eq('clerk_user_id', userId)
+                .eq('title', parentTitle.trim())
+                .eq('level', 'sub')
+                .single()
+
+            if (parent) {
+                // Conta task esistenti
+                const { count } = await supabase
+                    .from('objectives')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('parent_id', parent.id)
+                    .eq('level', 'task')
+
+                await supabase.from('objectives').insert({
+                    clerk_user_id: userId,
+                    mission_id: parent.mission_id,
+                    parent_id: parent.id,
+                    level: 'task',
+                    title: title.trim(),
+                    description: description.trim(),
+                    status: (count || 0) === 0 && taskIndex === 0 ? 'active' : 'pending',
+                    progress: 0,
+                    sort_order: (count || 0) + taskIndex + 1
+                })
+                console.log(`[NUR Action] Task creata: ${title}`)
+                taskIndex++
+            }
         } catch (e) {
             console.error('[NUR Action Error] Task:', e)
         }
     }
 
-    // Parse [GOAL:area|obiettivo]
-    const goalMatch = text.match(/\[GOAL:(\w+)\|([^\]]+)\]/)
-    if (goalMatch) {
-        const [, area, goal] = goalMatch
+    // Parse [COMPLETE:title]
+    const completeMatch = text.match(/\[COMPLETE:([^\]]+)\]/)
+    if (completeMatch) {
+        const [, title] = completeMatch
         try {
             await supabase
-                .from('life_areas')
+                .from('objectives')
                 .update({
-                    goal_state: { title: goal.trim(), set_at: new Date().toISOString() }
+                    status: 'completed',
+                    progress: 100,
+                    completed_at: new Date().toISOString()
                 })
                 .eq('clerk_user_id', userId)
-                .eq('area_type', area)
-            console.log(`[NUR Action] Goal impostato: ${goal} in ${area}`)
+                .eq('title', title.trim())
+            console.log(`[NUR Action] Completato: ${title}`)
         } catch (e) {
-            console.error('[NUR Action Error] Goal:', e)
+            console.error('[NUR Action Error] Complete:', e)
+        }
+    }
+
+    // Parse [PROGRESS:title|value]
+    const progressMatch = text.match(/\[PROGRESS:([^|]+)\|(\d+)\]/)
+    if (progressMatch) {
+        const [, title, value] = progressMatch
+        try {
+            await supabase
+                .from('objectives')
+                .update({
+                    progress: parseInt(value),
+                    status: parseInt(value) >= 100 ? 'completed' : 'active'
+                })
+                .eq('clerk_user_id', userId)
+                .eq('title', title.trim())
+            console.log(`[NUR Action] Progresso: ${title} → ${value}%`)
+        } catch (e) {
+            console.error('[NUR Action Error] Progress:', e)
+        }
+    }
+
+    // Parse [SAVE:tipo|titolo|contenuto]
+    const saveMatch = text.match(/\[SAVE:(\w+)\|([^|]+)\|([^\]]+)\]/)
+    if (saveMatch) {
+        const [, type, title, content] = saveMatch
+        try {
+            await supabase.from('journal_entries').insert({
+                clerk_user_id: userId,
+                entry_type: type,
+                title: title.trim(),
+                content: content.trim(),
+                metadata: { added_by: 'nur', is_material: true }
+            })
+            console.log(`[NUR Action] Materiale salvato: ${title}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Save:', e)
         }
     }
 
@@ -264,117 +468,31 @@ async function executeActions(text: string, userId: string): Promise<void> {
     if (memoryMatch) {
         const [, type, content] = memoryMatch
         try {
-            await supabase
-                .from('user_memory')
-                .insert({
-                    clerk_user_id: userId,
-                    memory_type: type,
-                    content: content.trim(),
-                    importance: 7,
-                    confidence: 8,
-                    is_current: true,
-                    mention_count: 1,
-                    last_relevant_at: new Date().toISOString()
-                })
+            await supabase.from('user_memory').insert({
+                clerk_user_id: userId,
+                memory_type: type,
+                content: content.trim(),
+                importance: 7,
+                confidence: 8,
+                is_current: true
+            })
             console.log(`[NUR Action] Memoria salvata: ${content}`)
         } catch (e) {
             console.error('[NUR Action Error] Memory:', e)
         }
     }
 
-    // Parse [MOOD:score|emozione]
-    const moodMatch = text.match(/\[MOOD:(\d+)\|([^\]]+)\]/)
-    if (moodMatch) {
-        const [, score, emotion] = moodMatch
-        try {
-            await supabase
-                .from('mood_logs')
-                .insert({
-                    clerk_user_id: userId,
-                    mood_score: parseInt(score),
-                    emotions: [emotion.trim()],
-                    detected_by: 'nur'
-                })
-            console.log(`[NUR Action] Mood registrato: ${score}/10 - ${emotion}`)
-        } catch (e) {
-            console.error('[NUR Action Error] Mood:', e)
-        }
-    }
-
-    // Parse [SAVE:tipo|titolo|contenuto] - per salvare materiale nella Scrivania
-    const saveMatch = text.match(/\[SAVE:(\w+)\|([^|]+)\|([^\]]+)\]/)
-    if (saveMatch) {
-        const [, type, title, content] = saveMatch
-        try {
-            await supabase
-                .from('journal_entries')
-                .insert({
-                    clerk_user_id: userId,
-                    entry_type: type, // guide, article, exercise, resource
-                    title: title.trim(),
-                    content: content.trim(),
-                    metadata: { added_by: 'nur', is_material: true }
-                })
-            console.log(`[NUR Action] Materiale salvato: ${title}`)
-        } catch (e) {
-            console.error('[NUR Action Error] Save:', e)
-        }
-    }
-
-    // Parse [INSIGHT:category|content] - per salvare insight sull'utente
-    const insightMatch = text.match(/\[INSIGHT:(\w+)\|([^\]]+)\]/)
-    if (insightMatch) {
-        const [, category, content] = insightMatch
-        try {
-            await supabase
-                .from('user_insights')
-                .insert({
-                    clerk_user_id: userId,
-                    category: category.trim(),
-                    content: content.trim(),
-                    importance: 7
-                })
-            console.log(`[NUR Action] Insight salvato: ${category} - ${content}`)
-        } catch (e) {
-            console.error('[NUR Action Error] Insight:', e)
-        }
-    }
-
-    // Parse [MISSION:title|description|why] - per impostare missione principale
-    const missionMatch = text.match(/\[MISSION:([^|]+)\|([^|]+)\|([^\]]+)\]/)
-    if (missionMatch) {
-        const [, title, description, why] = missionMatch
-        try {
-            // Upsert: aggiorna se esiste, crea se non esiste
-            await supabase
-                .from('user_mission')
-                .upsert({
-                    clerk_user_id: userId,
-                    title: title.trim(),
-                    description: description.trim(),
-                    why: why.trim(),
-                    status: 'active',
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'clerk_user_id' })
-            console.log(`[NUR Action] Missione impostata: ${title}`)
-        } catch (e) {
-            console.error('[NUR Action Error] Mission:', e)
-        }
-    }
-
-    // Parse [OBJECTIVE:level|parent|title|areas] - per creare obiettivo
+    // Legacy: Parse [OBJECTIVE:level|parent|title|areas]
     const objectiveMatch = text.match(/\[OBJECTIVE:(\w+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
     if (objectiveMatch) {
         const [, level, parent, title, areasStr] = objectiveMatch
         try {
-            // Trova mission_id dell'utente
             const { data: mission } = await supabase
                 .from('user_mission')
                 .select('id')
                 .eq('clerk_user_id', userId)
                 .single()
 
-            // Trova parent_id se non è 'mission'
             let parentId = null
             if (parent !== 'mission' && parent !== 'null') {
                 const { data: parentObj } = await supabase
@@ -388,62 +506,18 @@ async function executeActions(text: string, userId: string): Promise<void> {
 
             const areas = areasStr.split(',').map(a => a.trim())
 
-            await supabase
-                .from('objectives')
-                .insert({
-                    clerk_user_id: userId,
-                    mission_id: mission?.id,
-                    parent_id: parentId,
-                    level: level.trim(),
-                    title: title.trim(),
-                    related_areas: areas,
-                    status: 'pending'
-                })
+            await supabase.from('objectives').insert({
+                clerk_user_id: userId,
+                mission_id: mission?.id,
+                parent_id: parentId,
+                level: level.trim(),
+                title: title.trim(),
+                related_areas: areas,
+                status: 'pending'
+            })
             console.log(`[NUR Action] Obiettivo creato: ${title} (${level})`)
         } catch (e) {
             console.error('[NUR Action Error] Objective:', e)
-        }
-    }
-
-    // Parse [PROGRESS:objective_title|value] - per aggiornare progresso
-    const progressMatch = text.match(/\[PROGRESS:([^|]+)\|(\d+)\]/)
-    if (progressMatch) {
-        const [, objectiveTitle, value] = progressMatch
-        try {
-            // Trova obiettivo per titolo
-            const { data: objective } = await supabase
-                .from('objectives')
-                .select('id')
-                .eq('clerk_user_id', userId)
-                .eq('title', objectiveTitle.trim())
-                .single()
-
-            if (objective) {
-                await supabase
-                    .from('objectives')
-                    .update({
-                        progress: parseInt(value),
-                        current_value: parseInt(value),
-                        status: parseInt(value) >= 100 ? 'completed' : 'active',
-                        completed_at: parseInt(value) >= 100 ? new Date().toISOString() : null,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', objective.id)
-
-                // Salva in storico
-                await supabase
-                    .from('progress_history')
-                    .upsert({
-                        clerk_user_id: userId,
-                        objective_id: objective.id,
-                        date: new Date().toISOString().split('T')[0],
-                        value: parseInt(value)
-                    }, { onConflict: 'objective_id,date' })
-
-                console.log(`[NUR Action] Progresso aggiornato: ${objectiveTitle} → ${value}%`)
-            }
-        } catch (e) {
-            console.error('[NUR Action Error] Progress:', e)
         }
     }
 }
@@ -454,20 +528,23 @@ async function executeActions(text: string, userId: string): Promise<void> {
 
 function cleanResponse(text: string): string {
     return text
-        .replace(/\[TASK:[^\]]+\]/g, '')
-        .replace(/\[GOAL:[^\]]+\]/g, '')
-        .replace(/\[MEMORY:[^\]]+\]/g, '')
-        .replace(/\[MOOD:[^\]]+\]/g, '')
-        .replace(/\[SAVE:[^\]]+\]/g, '')
         .replace(/\[INSIGHT:[^\]]+\]/g, '')
         .replace(/\[MISSION:[^\]]+\]/g, '')
-        .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
+        .replace(/\[CHAPTER:[^\]]+\]/g, '')
+        .replace(/\[STEP:[^\]]+\]/g, '')
+        .replace(/\[TASK:[^\]]+\]/g, '')
+        .replace(/\[COMPLETE:[^\]]+\]/g, '')
         .replace(/\[PROGRESS:[^\]]+\]/g, '')
+        .replace(/\[SAVE:[^\]]+\]/g, '')
+        .replace(/\[MEMORY:[^\]]+\]/g, '')
+        .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
+        .replace(/\[GOAL:[^\]]+\]/g, '')
+        .replace(/\[MOOD:[^\]]+\]/g, '')
         .trim()
 }
 
 // ============================================
-// HELPER: Recupera ultima azione per Haiku
+// HELPER: Recupera ultima azione
 // ============================================
 
 async function getLastAction(userId: string): Promise<string> {
@@ -491,7 +568,7 @@ async function getLastAction(userId: string): Promise<string> {
 }
 
 // ============================================
-// MAIN: POST Handler - SISTEMA IBRIDO
+// MAIN: POST Handler
 // ============================================
 
 export async function POST(req: NextRequest) {
@@ -510,12 +587,12 @@ export async function POST(req: NextRequest) {
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // ====== 1. ROUTING: HAIKU O SONNET? ======
+        // 1. ROUTING: HAIKU O SONNET?
         const useSonnet = needsSonnet(message, history)
         const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
         console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
 
-        // ====== 2. GESTIONE CONVERSAZIONE ======
+        // 2. GESTIONE CONVERSAZIONE
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -543,33 +620,40 @@ export async function POST(req: NextRequest) {
             })
         }
 
-        // ====== 3. COSTRUISCI PROMPT ======
+        // 3. COSTRUISCI CONTESTI
         const userContext = await buildUserContext(userId)
+        const missionPhase = await getMissionPhase(userId)
+        const missionContext = await buildMissionContext(userId)
         const lastAction = await getLastAction(userId)
-        const recentHistory = (history || []).slice(-4)
+        const recentHistory = (history || []).slice(-6)
 
+        // 4. COSTRUISCI PROMPT
         let systemPrompt: string
         if (useSonnet) {
-            // SONNET: prompt per azioni - usa contesto compatto + istruzioni azioni
+            // SONNET: prompt per azioni con mission context
             const recentMsgs = recentHistory
                 .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
                 .join('\n')
             systemPrompt = SONNET_PROMPT
                 .replace('{USER_CONTEXT}', contextToString(userContext))
+                .replace('{MISSION_PHASE}', missionPhase)
+                .replace('{MISSION_CONTEXT}', missionContext)
                 .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
         } else {
             // HAIKU: USA LA PERSONALITÀ COMPLETA DI NUR!
             // generateNurPrompt include tutta la storia, il carattere, le memorie dell'utente
             const nurPersonality = generateNurPrompt(userContext)
 
-            // Aggiungi istruzioni operative specifiche per Haiku
+            // Aggiungi istruzioni operative specifiche per Haiku + mission context
             systemPrompt = `${nurPersonality}
 
 ---
 
 ## ISTRUZIONI OPERATIVE
 
-${lastAction ? `[Ultima azione: ${lastAction}]` : ''}
+${lastAction ? `${lastAction}` : ''}
+
+${missionContext ? `## STATO MISSIONE\n${missionContext}\n` : ''}
 
 IMPORTANTE: Se l'utente vuole SALVARE qualcosa (guide, task, traguardi, contenuti, viaggi),
 digli: "Dimmi cosa vuoi che salvi e lo faccio subito!"
@@ -578,7 +662,7 @@ Keywords che attivano il salvataggio: salva, crea, aggiungi, metti, task, tragua
 Rispondi sempre in italiano. Max 1 emoji per messaggio.`
         }
 
-        // ====== 4. PREPARA MESSAGGI ======
+        // 5. PREPARA MESSAGGI
         const messages: Anthropic.MessageParam[] = [
             ...recentHistory.map((m: any) => ({
                 role: m.role as 'user' | 'assistant',
@@ -587,7 +671,7 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
             { role: 'user', content: message }
         ]
 
-        // ====== 5. STREAMING ======
+        // 6. STREAMING
         const encoder = new TextEncoder()
         let fullResponse = ''
         let pendingBuffer = ''
@@ -595,14 +679,13 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
         const readable = new ReadableStream({
             async start(controller) {
                 try {
-                    // Invia conversationId subito se nuovo
                     if (conversationId && !existingConvId) {
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ conversationId })}\n\n`))
                     }
 
                     const stream = anthropic.messages.stream({
                         model: modelToUse,
-                        max_tokens: useSonnet ? 1000 : 500, // Sonnet può scrivere contenuti più lunghi
+                        max_tokens: useSonnet ? 1200 : 500,
                         system: systemPrompt,
                         messages
                     })
@@ -614,30 +697,19 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
                                 fullResponse += delta.text
                                 pendingBuffer += delta.text
 
-                                // Buffer per nascondere comandi parziali
                                 let textToSend = pendingBuffer
                                 const lastOpenBracket = textToSend.lastIndexOf('[')
                                 const lastCloseBracket = textToSend.lastIndexOf(']')
 
                                 if (lastOpenBracket > lastCloseBracket) {
+                                    // C'è un comando aperto, tieni il buffer
                                     textToSend = pendingBuffer.substring(0, lastOpenBracket)
                                     pendingBuffer = pendingBuffer.substring(lastOpenBracket)
                                 } else {
                                     pendingBuffer = ''
                                 }
 
-                                // Rimuovi comandi completi dal testo visibile
-                                const cleanText = textToSend
-                                    .replace(/\[TASK:[^\]]+\]/g, '')
-                                    .replace(/\[GOAL:[^\]]+\]/g, '')
-                                    .replace(/\[MEMORY:[^\]]+\]/g, '')
-                                    .replace(/\[MOOD:[^\]]+\]/g, '')
-                                    .replace(/\[SAVE:[^\]]+\]/g, '')
-                                    .replace(/\[INSIGHT:[^\]]+\]/g, '')
-                                    .replace(/\[MISSION:[^\]]+\]/g, '')
-                                    .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
-                                    .replace(/\[PROGRESS:[^\]]+\]/g, '')
-
+                                const cleanText = cleanResponse(textToSend)
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                                 }
@@ -645,11 +717,20 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
                         }
                     }
 
+                    // IMPORTANTE: Svuota il buffer residuo alla fine dello streaming
+                    if (pendingBuffer) {
+                        const cleanText = cleanResponse(pendingBuffer)
+                        if (cleanText) {
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
+                        }
+                        pendingBuffer = ''
+                    }
+
                     // Log costi
                     const finalMessage = await stream.finalMessage()
                     if (finalMessage.usage) {
                         const isHaiku = modelToUse.includes('haiku')
-                        const inputRate = isHaiku ? 0.001 : 0.003  // $/1K tokens
+                        const inputRate = isHaiku ? 0.001 : 0.003
                         const outputRate = isHaiku ? 0.005 : 0.015
                         const inputCost = (finalMessage.usage.input_tokens * inputRate) / 1000
                         const outputCost = (finalMessage.usage.output_tokens * outputRate) / 1000
@@ -657,13 +738,13 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
                         console.log(`[NUR COST] Model: ${modelToUse} | In: ${finalMessage.usage.input_tokens} | Out: ${finalMessage.usage.output_tokens} | Cost: $${totalCost.toFixed(6)}`)
                     }
 
-                    // ====== 6. ESEGUI AZIONI (solo se Sonnet) ======
+                    // 7. ESEGUI AZIONI
                     if (useSonnet && fullResponse.includes('[')) {
                         console.log('[NUR ACTION] Executing commands from Sonnet response')
                         await executeActions(fullResponse, userId)
                     }
 
-                    // ====== 7. SALVA RISPOSTA ======
+                    // 8. SALVA RISPOSTA
                     const cleanedResponse = cleanResponse(fullResponse)
                     if (conversationId && cleanedResponse) {
                         await supabase.from('messages').insert({
@@ -676,10 +757,7 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
 
                         await supabase
                             .from('conversations')
-                            .update({
-                                message_count: supabase.rpc('increment', { row_id: conversationId }),
-                                updated_at: new Date().toISOString()
-                            })
+                            .update({ updated_at: new Date().toISOString() })
                             .eq('id', conversationId)
                     }
 
