@@ -8,6 +8,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
+import { generateNurPrompt, UserContext } from '@/lib/nur/personality'
 
 // ============================================
 // KEYWORDS PER ROUTING → SONNET
@@ -64,25 +65,8 @@ function needsSonnet(message: string, history?: any[]): boolean {
 }
 
 // ============================================
-// PROMPT HAIKU - Chat normale
-// ============================================
-
-const HAIKU_PROMPT = `Sei NUR, coach AI. Diretta, pratica, sfacciata. Max 1 emoji.
-
-Sei qui per conversare, motivare, consigliare. Conosci l'utente e lo aiuti.
-
-IMPORTANTE: Se l'utente vuole SALVARE qualcosa (guide, task, traguardi, contenuti, viaggi),
-digli: "Dimmi cosa vuoi che salvi e lo faccio subito!"
-Keywords che attivano il salvataggio: salva, crea, aggiungi, metti, task, traguardo, contenuto, viaggio, piano.
-
-{USER_CONTEXT}
-
-{LAST_ACTION}
-
-Rispondi in italiano.`
-
-// ============================================
 // PROMPT SONNET - Solo azioni
+// (Haiku ora usa generateNurPrompt dalla personality.ts)
 // ============================================
 
 const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. DEVI SEMPRE eseguire il comando quando l'utente conferma.
@@ -125,70 +109,99 @@ RICORDA: Se l'utente ha confermato, INCLUDI I COMANDI. Non rispondere mai solo c
 Rispondi in italiano.`
 
 // ============================================
-// HELPER: Costruisci contesto utente compatto
+// HELPER: Costruisci contesto utente COMPLETO
 // ============================================
 
-async function buildCompactContext(userId: string): Promise<string> {
+async function buildUserContext(userId: string): Promise<UserContext> {
     try {
         // Query parallele per velocità
-        const [areasResult, memoriesResult, tasksResult] = await Promise.all([
+        const [profileResult, areasResult, memoriesResult, insightsResult] = await Promise.all([
+            supabase
+                .from('user_profiles')
+                .select('full_name, age_range, communication_style')
+                .eq('clerk_user_id', userId)
+                .maybeSingle(),
             supabase
                 .from('life_areas')
-                .select('area_type, progress, goal_state')
+                .select('area_type, progress, priority, current_state, goal_state')
                 .eq('clerk_user_id', userId),
             supabase
                 .from('user_memory')
-                .select('memory_type, content')
+                .select('memory_type, content, importance, area_related')
                 .eq('clerk_user_id', userId)
                 .eq('is_current', true)
                 .order('importance', { ascending: false })
-                .limit(5),
+                .limit(8),
             supabase
-                .from('life_areas')
-                .select('area_type, active_tasks')
+                .from('user_insights')
+                .select('insight_type, content')
                 .eq('clerk_user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(5)
         ])
 
-        let context = ''
+        const userContext: UserContext = {}
 
-        // Aree con progressi
-        if (areasResult.data?.length) {
-            const areasInfo = areasResult.data
-                .filter((a: any) => a.progress > 0 || a.goal_state?.title)
-                .map((a: any) => `${a.area_type}:${a.progress}%${a.goal_state?.title ? ` (goal: ${a.goal_state.title})` : ''}`)
-                .join(', ')
-            if (areasInfo) context += `Aree: ${areasInfo}. `
-        }
-
-        // Memorie importanti
-        if (memoriesResult.data?.length) {
-            const memories = memoriesResult.data
-                .map((m: any) => m.content)
-                .join('; ')
-            context += `Ricordo: ${memories}. `
-        }
-
-        // Task pendenti (max 3)
-        if (tasksResult.data?.length) {
-            const pendingTasks: string[] = []
-            tasksResult.data.forEach((area: any) => {
-                if (Array.isArray(area.active_tasks)) {
-                    area.active_tasks
-                        .filter((t: any) => !t.completed)
-                        .slice(0, 2)
-                        .forEach((t: any) => pendingTasks.push(t.title))
-                }
-            })
-            if (pendingTasks.length) {
-                context += `Task attive: ${pendingTasks.slice(0, 3).join(', ')}. `
+        // Profilo utente
+        if (profileResult.data) {
+            userContext.profile = {
+                full_name: profileResult.data.full_name,
+                age_range: profileResult.data.age_range,
+                communication_style: profileResult.data.communication_style
             }
         }
 
-        return context || 'Nuovo utente, ancora da conoscere.'
+        // Aree vita
+        if (areasResult.data?.length) {
+            userContext.life_areas = areasResult.data.map((a: any) => ({
+                area_type: a.area_type,
+                progress: a.progress || 0,
+                priority: a.priority || 5,
+                current_state: a.current_state,
+                goal_state: a.goal_state?.title
+            }))
+        }
+
+        // Memorie recenti
+        if (memoriesResult.data?.length) {
+            userContext.recent_memories = memoriesResult.data.map((m: any) => ({
+                memory_type: m.memory_type,
+                content: m.content,
+                importance: m.importance,
+                area_related: m.area_related
+            }))
+        }
+
+        // Insight recenti
+        if (insightsResult.data?.length) {
+            userContext.recent_insights = insightsResult.data.map((i: any) => ({
+                insight_type: i.insight_type,
+                content: i.content
+            }))
+        }
+
+        return userContext
     } catch (error) {
         console.error('Context build error:', error)
-        return 'Utente registrato.'
+        return {}
     }
+}
+
+// Versione stringa compatta per Sonnet (azioni)
+function contextToString(ctx: UserContext): string {
+    let str = ''
+    if (ctx.profile?.full_name) str += `Utente: ${ctx.profile.full_name}. `
+    if (ctx.recent_memories?.length) {
+        str += `Ricordo: ${ctx.recent_memories.map(m => m.content).join('; ')}. `
+    }
+    if (ctx.life_areas?.length) {
+        const areas = ctx.life_areas
+            .filter(a => a.progress > 0 || a.goal_state)
+            .map(a => `${a.area_type}:${a.progress}%`)
+            .join(', ')
+        if (areas) str += `Aree: ${areas}. `
+    }
+    return str || 'Nuovo utente.'
 }
 
 // ============================================
@@ -531,24 +544,38 @@ export async function POST(req: NextRequest) {
         }
 
         // ====== 3. COSTRUISCI PROMPT ======
-        const userContext = await buildCompactContext(userId)
+        const userContext = await buildUserContext(userId)
         const lastAction = await getLastAction(userId)
         const recentHistory = (history || []).slice(-4)
 
         let systemPrompt: string
         if (useSonnet) {
-            // SONNET: prompt per azioni
+            // SONNET: prompt per azioni - usa contesto compatto + istruzioni azioni
             const recentMsgs = recentHistory
                 .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
                 .join('\n')
             systemPrompt = SONNET_PROMPT
-                .replace('{USER_CONTEXT}', userContext)
+                .replace('{USER_CONTEXT}', contextToString(userContext))
                 .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
         } else {
-            // HAIKU: prompt per chat
-            systemPrompt = HAIKU_PROMPT
-                .replace('{USER_CONTEXT}', userContext)
-                .replace('{LAST_ACTION}', lastAction)
+            // HAIKU: USA LA PERSONALITÀ COMPLETA DI NUR!
+            // generateNurPrompt include tutta la storia, il carattere, le memorie dell'utente
+            const nurPersonality = generateNurPrompt(userContext)
+
+            // Aggiungi istruzioni operative specifiche per Haiku
+            systemPrompt = `${nurPersonality}
+
+---
+
+## ISTRUZIONI OPERATIVE
+
+${lastAction ? `[Ultima azione: ${lastAction}]` : ''}
+
+IMPORTANTE: Se l'utente vuole SALVARE qualcosa (guide, task, traguardi, contenuti, viaggi),
+digli: "Dimmi cosa vuoi che salvi e lo faccio subito!"
+Keywords che attivano il salvataggio: salva, crea, aggiungi, metti, task, traguardo, contenuto, viaggio, piano.
+
+Rispondi sempre in italiano. Max 1 emoji per messaggio.`
         }
 
         // ====== 4. PREPARA MESSAGGI ======
