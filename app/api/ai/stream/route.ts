@@ -627,8 +627,9 @@ async function executeActions(text: string, userId: string): Promise<void> {
 // HELPER: Pulisci risposta dai comandi
 // ============================================
 
-function cleanResponse(text: string): string {
-    return text
+function cleanResponse(text: string, isFinal: boolean = false): string {
+    // Rimuovi i comandi NUR dal testo
+    let cleaned = text
         .replace(/\[INSIGHT:[^\]]+\]/g, '')
         .replace(/\[MISSION:[^\]]+\]/g, '')
         .replace(/\[CHAPTER:[^\]]+\]/g, '')
@@ -643,7 +644,10 @@ function cleanResponse(text: string): string {
         .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
         .replace(/\[GOAL:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
-        .trim()
+
+    // IMPORTANTE: NON fare trim() durante lo streaming per preservare gli spazi
+    // Trim solo alla fine del messaggio completo
+    return isFinal ? cleaned.trim() : cleaned
 }
 
 // ============================================
@@ -795,7 +799,8 @@ export async function POST(req: NextRequest) {
                                     pendingBuffer = ''
                                 }
 
-                                const cleanText = cleanResponse(textToSend)
+                                // Durante streaming: NON fare trim per preservare gli spazi
+                                const cleanText = cleanResponse(textToSend, false)
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                                 }
@@ -805,7 +810,7 @@ export async function POST(req: NextRequest) {
 
                     // IMPORTANTE: Svuota il buffer residuo alla fine dello streaming
                     if (pendingBuffer) {
-                        const cleanText = cleanResponse(pendingBuffer)
+                        const cleanText = cleanResponse(pendingBuffer, false)
                         if (cleanText) {
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                         }
@@ -830,8 +835,8 @@ export async function POST(req: NextRequest) {
                         await executeActions(fullResponse, userId)
                     }
 
-                    // 8. SALVA RISPOSTA
-                    const cleanedResponse = cleanResponse(fullResponse)
+                    // 8. SALVA RISPOSTA (con trim finale)
+                    const cleanedResponse = cleanResponse(fullResponse, true)
                     if (conversationId && cleanedResponse) {
                         await supabase.from('messages').insert({
                             conversation_id: conversationId,
