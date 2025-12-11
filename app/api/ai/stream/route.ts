@@ -650,6 +650,7 @@ export async function POST(req: NextRequest) {
                                 const lastCloseBracket = textToSend.lastIndexOf(']')
 
                                 if (lastOpenBracket > lastCloseBracket) {
+                                    // C'è un comando aperto, tieni il buffer
                                     textToSend = pendingBuffer.substring(0, lastOpenBracket)
                                     pendingBuffer = pendingBuffer.substring(lastOpenBracket)
                                 } else {
@@ -662,6 +663,15 @@ export async function POST(req: NextRequest) {
                                 }
                             }
                         }
+                    }
+
+                    // IMPORTANTE: Svuota il buffer residuo alla fine dello streaming
+                    if (pendingBuffer) {
+                        const cleanText = cleanResponse(pendingBuffer)
+                        if (cleanText) {
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
+                        }
+                        pendingBuffer = ''
                     }
 
                     // Log costi
