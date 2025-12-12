@@ -964,11 +964,12 @@ export async function POST(req: NextRequest) {
         const isDiscoveryMode = discoveryState.isNewUser
         console.log(`[NUR] Discovery mode: ${isDiscoveryMode}, insights: ${discoveryState.insightCount}`)
 
-        // 2. ROUTING: HAIKU O SONNET? (passa isDiscoveryMode)
-        // NUR che inizia = sempre Haiku (è solo un saluto)
-        const useSonnet = isNurStarting ? false : needsSonnet(message, history, isDiscoveryMode)
+        // 2. ROUTING: HAIKU O SONNET?
+        // Discovery Mode = SEMPRE Sonnet (per garantire che i comandi [PROFILE:...] vengano usati correttamente)
+        // Sonnet è più costoso ma segue meglio le istruzioni sui comandi
+        const useSonnet = isDiscoveryMode || needsSonnet(message, history, isDiscoveryMode)
         const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
-        console.log(`[NUR ROUTER] ${isNurStarting ? 'NUR STARTING' : `Message: "${message.substring(0, 50)}..."`} → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
+        console.log(`[NUR ROUTER] ${isNurStarting ? 'NUR STARTING' : `Message: "${message.substring(0, 50)}..."`} → ${useSonnet ? 'SONNET' : 'HAIKU'} (Discovery: ${isDiscoveryMode})`)
 
         // 3. GESTIONE CONVERSAZIONE
         let conversationId = existingConvId
@@ -1159,6 +1160,18 @@ export async function POST(req: NextRequest) {
                             console.log('[NUR ACTION] Executing INSIGHT commands from Haiku response')
                             await executeActions(fullResponse, userId)
                         }
+                    }
+
+                    // 7b. CHECK QUEST COMPLETION
+                    // Dopo ogni risposta, controlla se qualche quest è completabile
+                    try {
+                        const { checkAllQuests } = await import('@/lib/quest-system')
+                        const completedQuests = await checkAllQuests(userId)
+                        if (completedQuests.length > 0) {
+                            console.log(`[NUR QUEST] Quests completed: ${completedQuests.join(', ')}`)
+                        }
+                    } catch (questError) {
+                        console.error('[NUR QUEST] Error checking quests:', questError)
                     }
 
                     // 8. SALVA RISPOSTA (con trim finale)
