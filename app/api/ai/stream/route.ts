@@ -1023,9 +1023,11 @@ export async function POST(req: NextRequest) {
         let systemPrompt: string
 
         // DISCOVERY MODE: Prima conversazione - NUR deve conoscere l'utente
-        if (isDiscoveryMode && !useSonnet) {
-            console.log('[NUR] Using DISCOVERY PROMPT for new user')
+        // IMPORTANTE: Discovery Mode usa SEMPRE il Discovery Prompt (con istruzioni comandi)
+        if (isDiscoveryMode) {
             const activeQuest = await getActiveQuest(userId)
+            console.log(`[NUR] ✅ DISCOVERY MODE ACTIVE - Quest: ${activeQuest?.title || 'none'}`)
+            console.log(`[NUR] ✅ Using DISCOVERY PROMPT with commands [PROFILE:...] and [INSIGHT:...]`)
             systemPrompt = await generateDiscoveryPrompt(userId, compactContext, discoveryState.insights, activeQuest)
 
             // Se ha abbastanza insight, aggiungi suggerimento di proporre missione
@@ -1150,15 +1152,19 @@ export async function POST(req: NextRequest) {
                     }
 
                     // 7. ESEGUI AZIONI
-                    // Sonnet: esegui tutti i comandi
-                    // Haiku: esegui solo INSIGHT (per non perdere informazioni sull'utente)
-                    if (fullResponse.includes('[')) {
-                        if (useSonnet) {
-                            console.log('[NUR ACTION] Executing ALL commands from Sonnet response')
-                            await executeActions(fullResponse, userId)
-                        } else if (fullResponse.includes('[INSIGHT:')) {
-                            console.log('[NUR ACTION] Executing INSIGHT commands from Haiku response')
-                            await executeActions(fullResponse, userId)
+                    // Esegui SEMPRE i comandi se presenti (sia Sonnet che Haiku)
+                    const hasCommands = fullResponse.includes('[PROFILE:') ||
+                                       fullResponse.includes('[INSIGHT:') ||
+                                       fullResponse.includes('[ACTION:')
+
+                    if (hasCommands) {
+                        console.log(`[NUR ACTION] Found commands in response, executing... (Discovery: ${isDiscoveryMode})`)
+                        console.log(`[NUR ACTION] Response preview: ${fullResponse.substring(0, 200)}...`)
+                        await executeActions(fullResponse, userId)
+                    } else {
+                        console.log(`[NUR ACTION] No commands found in response (Discovery: ${isDiscoveryMode})`)
+                        if (isDiscoveryMode) {
+                            console.warn('[NUR WARNING] Discovery mode but no commands! User info may be lost.')
                         }
                     }
 
