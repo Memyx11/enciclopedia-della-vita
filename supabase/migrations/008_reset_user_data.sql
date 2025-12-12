@@ -4,7 +4,7 @@
 -- mantenendo la struttura delle tabelle
 -- =============================================
 
--- Pulisci dati gioco/quest
+-- Pulisci dati gioco/quest (nuove tabelle da 007)
 DELETE FROM daily_task_log;
 DELETE FROM routine_tasks;
 DELETE FROM user_routine_template;
@@ -13,7 +13,7 @@ DELETE FROM user_quest_progress;
 DELETE FROM user_achievements;
 DELETE FROM user_profile_data;
 
--- Pulisci dati missione vecchio sistema
+-- Pulisci dati missione
 DELETE FROM task_materials;
 DELETE FROM task_notes;
 DELETE FROM objectives;
@@ -22,7 +22,6 @@ DELETE FROM user_mission;
 -- Pulisci memorie NUR
 DELETE FROM user_memory;
 DELETE FROM user_insights;
-DELETE FROM nur_memory;
 
 -- Pulisci conversazioni
 DELETE FROM messages;
@@ -31,15 +30,8 @@ DELETE FROM conversations;
 -- Pulisci journal
 DELETE FROM journal_entries;
 
--- Pulisci soluzioni e insight AI
-DELETE FROM solutions;
-DELETE FROM ai_insights;
-
 -- Pulisci storico XP
 DELETE FROM xp_history;
-
--- Pulisci life_areas (ma mantieni le configurazioni)
-DELETE FROM life_areas;
 
 -- Reset profili (onboarding_completed = false)
 UPDATE profiles SET

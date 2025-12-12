@@ -371,13 +371,13 @@ export default function QuestPage() {
                         <span className="nav-icon">💬</span>
                         <span className="nav-label">NUR</span>
                     </Link>
+                    <Link href="/routine" className="nav-item">
+                        <span className="nav-icon">📅</span>
+                        <span className="nav-label">Routine</span>
+                    </Link>
                     <Link href="/quest" className="nav-item active">
                         <span className="nav-icon">🎮</span>
                         <span className="nav-label">Quest</span>
-                    </Link>
-                    <Link href="/giornale" className="nav-item">
-                        <span className="nav-icon">🗂️</span>
-                        <span className="nav-label">Scrivania</span>
                     </Link>
                 </div>
             </nav>
