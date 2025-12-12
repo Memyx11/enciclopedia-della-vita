@@ -431,13 +431,17 @@ export default function LaMiaVitaPage() {
     }
 
     if (!user) {
+        // Redirect to sign-in
+        if (typeof window !== 'undefined') {
+            window.location.href = '/sign-in?redirect_url=/la-mia-vita'
+        }
         return (
             <div className="container">
                 <div className="auth-prompt">
                     <div className="auth-icon">🎯</div>
                     <h1>Il Gioco della Vita</h1>
                     <p>Accedi per iniziare la tua avventura</p>
-                    <Link href="/" className="btn-primary">Vai alla Home</Link>
+                    <Link href="/sign-in?redirect_url=/la-mia-vita" className="btn-primary">Accedi</Link>
                 </div>
                 <style jsx>{styles}</style>
             </div>

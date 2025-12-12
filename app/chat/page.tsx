@@ -432,13 +432,24 @@ function ChatContent() {
             }
         }
 
-        console.log('[CHAT] Effect check:', { loading, messagesLength: messages.length, user: !!user, status, triggered: hasTriggeredInitialMessage.current })
+        // Debug dettagliato
+        if (typeof window !== 'undefined') {
+            console.log('[CHAT] Effect check:', {
+                loading,
+                messagesLength: messages.length,
+                hasUser: !!user,
+                userId: user?.id?.substring(0, 10),
+                status,
+                alreadyTriggered: hasTriggeredInitialMessage.current
+            })
+        }
 
         if (!loading && messages.length === 0 && user && !hasTriggeredInitialMessage.current && status === 'ready') {
             hasTriggeredInitialMessage.current = true
-            console.log('[CHAT] Conditions met! Starting NUR...')
+            console.log('[CHAT] ✅ All conditions met! Starting NUR in 800ms...')
             // Piccolo delay per assicurarsi che tutto sia pronto
             const timer = setTimeout(() => {
+                console.log('[CHAT] Timer fired, calling triggerInitialMessage()')
                 triggerInitialMessage()
             }, 800)
             return () => clearTimeout(timer)
@@ -584,6 +595,10 @@ function ChatContent() {
     if (!isLoaded) return null
 
     if (!user) {
+        // Redirect to sign-in
+        if (typeof window !== 'undefined') {
+            window.location.href = '/sign-in?redirect_url=/chat'
+        }
         return (
             <div className="chat-page">
                 <div className="bg-gradient"></div>
@@ -591,8 +606,8 @@ function ChatContent() {
                     <div className="nur-avatar large">💜</div>
                     <h1>Ciao! Sono NUR</h1>
                     <p>Accedi per iniziare a parlare con me</p>
-                    <Link href="/" className="btn btn-primary">
-                        Vai alla Home
+                    <Link href="/sign-in?redirect_url=/chat" className="btn btn-primary">
+                        Accedi
                     </Link>
                 </div>
             </div>
