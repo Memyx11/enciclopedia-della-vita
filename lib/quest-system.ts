@@ -265,10 +265,48 @@ export async function checkAndCompleteQuest(
 }
 
 /**
- * Controlla tutte le quest in_progress e completa quelle completabili
+ * Controlla tutte le quest e completa quelle completabili
+ * Usa la funzione SQL che gestisce auto-start e completamento
  */
 export async function checkAllQuests(userId: string): Promise<string[]> {
+    try {
+        // Usa la funzione SQL migliorata che:
+        // 1. Auto-start delle quest available → in_progress
+        // 2. Controlla tutte le quest in_progress
+        // 3. Completa quelle che soddisfano i requisiti
+        const { data, error } = await supabase.rpc('check_and_complete_all_quests', {
+            p_clerk_user_id: userId
+        })
+
+        if (error) {
+            console.error('[Quest] Error checking quests:', error)
+            // Fallback al metodo manuale
+            return await checkAllQuestsManual(userId)
+        }
+
+        const completedQuests = (data || []).map((q: any) => q.completed_quest_id)
+        if (completedQuests.length > 0) {
+            console.log(`[Quest] Completed via SQL: ${completedQuests.join(', ')}`)
+        }
+        return completedQuests
+    } catch (e) {
+        console.error('[Quest] Exception:', e)
+        return await checkAllQuestsManual(userId)
+    }
+}
+
+/**
+ * Fallback manuale per checkAllQuests
+ */
+async function checkAllQuestsManual(userId: string): Promise<string[]> {
     const completedQuests: string[] = []
+
+    // Prima metti in_progress le quest available
+    await supabase
+        .from('user_quest_progress')
+        .update({ status: 'in_progress', started_at: new Date().toISOString() })
+        .eq('clerk_user_id', userId)
+        .eq('status', 'available')
 
     // Carica quest in progress
     const { data: inProgress } = await supabase
