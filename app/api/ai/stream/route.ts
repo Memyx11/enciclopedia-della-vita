@@ -943,7 +943,7 @@ async function getLastAction(userId: string): Promise<string> {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json()
-        const { message, userId, history, conversationId: existingConvId, area } = body
+        const { message, userId, history, conversationId: existingConvId, area, isInitialMessage } = body
 
         if (!message || !userId) {
             return new Response(JSON.stringify({ error: 'Parametri mancanti' }), {
@@ -951,6 +951,9 @@ export async function POST(req: NextRequest) {
                 headers: { 'Content-Type': 'application/json' }
             })
         }
+
+        // Determina se NUR deve iniziare la conversazione
+        const isNurStarting = message === '__NUR_START_CONVERSATION__' || isInitialMessage
 
         const anthropic = new Anthropic({
             apiKey: process.env.ANTHROPIC_API_KEY
@@ -962,9 +965,10 @@ export async function POST(req: NextRequest) {
         console.log(`[NUR] Discovery mode: ${isDiscoveryMode}, insights: ${discoveryState.insightCount}`)
 
         // 2. ROUTING: HAIKU O SONNET? (passa isDiscoveryMode)
-        const useSonnet = needsSonnet(message, history, isDiscoveryMode)
+        // NUR che inizia = sempre Haiku (è solo un saluto)
+        const useSonnet = isNurStarting ? false : needsSonnet(message, history, isDiscoveryMode)
         const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
-        console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
+        console.log(`[NUR ROUTER] ${isNurStarting ? 'NUR STARTING' : `Message: "${message.substring(0, 50)}..."`} → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
 
         // 3. GESTIONE CONVERSAZIONE
         let conversationId = existingConvId
@@ -983,8 +987,8 @@ export async function POST(req: NextRequest) {
             conversationId = conv?.id
         }
 
-        // Salva messaggio utente
-        if (conversationId) {
+        // Salva messaggio utente (solo se NON è NUR che inizia)
+        if (conversationId && !isNurStarting) {
             await supabase.from('messages').insert({
                 conversation_id: conversationId,
                 clerk_user_id: userId,
@@ -1059,13 +1063,22 @@ export async function POST(req: NextRequest) {
         }
 
         // 5. PREPARA MESSAGGI
-        const messages: Anthropic.MessageParam[] = [
-            ...recentHistory.map((m: any) => ({
-                role: m.role as 'user' | 'assistant',
-                content: m.content
-            })),
-            { role: 'user', content: message }
-        ]
+        let messages: Anthropic.MessageParam[]
+
+        if (isNurStarting) {
+            // NUR inizia: usa un messaggio che le dice di presentarsi
+            messages = [
+                { role: 'user', content: '[L\'utente è appena entrato in chat. Salutalo per primo con il suo nome se lo conosci, presentati brevemente come NUR e fagli una domanda aperta per iniziare a conoscerlo. Sii calda e accogliente ma non smielata.]' }
+            ]
+        } else {
+            messages = [
+                ...recentHistory.map((m: any) => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.content
+                })),
+                { role: 'user', content: message }
+            ]
+        }
 
         // 6. STREAMING
         const encoder = new TextEncoder()

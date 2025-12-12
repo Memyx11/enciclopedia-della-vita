@@ -170,6 +170,7 @@ function ChatContent() {
     const chatRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const hasTriggeredInitialMessage = useRef(false)
 
     // AI Disclaimer
     const { showDisclaimer, acceptDisclaimer } = useAIDisclaimer()
@@ -325,6 +326,121 @@ function ChatContent() {
     const getTimestamp = () => {
         return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     }
+
+    // Funzione per far partire NUR con il primo messaggio automatico
+    const sendInitialNurMessage = async () => {
+        if (!user || status !== 'ready') return
+
+        setStatus('thinking')
+        setStatusText('NUR sta pensando...')
+
+        try {
+            // Chiama l'API con un messaggio speciale che indica "inizia tu"
+            const response = await fetch('/api/ai/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: '__NUR_START_CONVERSATION__',
+                    userId: user.id,
+                    history: [],
+                    conversationId: null,
+                    area: null,
+                    isInitialMessage: true
+                })
+            })
+
+            if (!response.ok) {
+                throw new Error('Stream request failed')
+            }
+
+            setStatus('streaming')
+            setStatusText('NUR sta scrivendo...')
+
+            // Crea placeholder per la risposta streaming
+            const streamingMessage: Message = {
+                content: '',
+                role: 'assistant',
+                timestamp: getTimestamp(),
+                isStreaming: true
+            }
+            setMessages([streamingMessage])
+
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+            let fullContent = ''
+
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+
+                    const chunk = decoder.decode(value)
+                    const lines = chunk.split('\n\n')
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6))
+
+                                if (data.text) {
+                                    fullContent += data.text
+                                    setMessages(prev => {
+                                        const newMessages = [...prev]
+                                        const lastMsg = newMessages[newMessages.length - 1]
+                                        if (lastMsg && lastMsg.isStreaming) {
+                                            lastMsg.content = fullContent
+                                        }
+                                        return newMessages
+                                    })
+                                }
+
+                                if (data.conversationId) {
+                                    setConversationId(data.conversationId)
+                                }
+
+                                if (data.done) {
+                                    setMessages(prev => {
+                                        const newMessages = [...prev]
+                                        const lastMsg = newMessages[newMessages.length - 1]
+                                        if (lastMsg) {
+                                            lastMsg.isStreaming = false
+                                        }
+                                        return newMessages
+                                    })
+                                }
+
+                                if (data.error) {
+                                    throw new Error(data.error)
+                                }
+                            } catch (e) {
+                                // Ignora errori di parsing
+                            }
+                        }
+                    }
+                }
+            }
+
+            setStatus('ready')
+            setStatusText('NUR è pronta')
+
+        } catch (error) {
+            console.error('Initial message error:', error)
+            setStatus('ready')
+            setStatusText('NUR è pronta')
+        }
+    }
+
+    // Trigger messaggio iniziale quando: caricamento finito, nessun messaggio, utente presente
+    useEffect(() => {
+        if (!loading && messages.length === 0 && user && !hasTriggeredInitialMessage.current && status === 'ready') {
+            hasTriggeredInitialMessage.current = true
+            // Piccolo delay per assicurarsi che tutto sia pronto
+            const timer = setTimeout(() => {
+                sendInitialNurMessage()
+            }, 500)
+            return () => clearTimeout(timer)
+        }
+    }, [loading, messages.length, user, status])
 
     const sendMessage = async () => {
         if (!input.trim() || !user || status !== 'ready') return
@@ -536,23 +652,12 @@ function ChatContent() {
                         <div className="nur-avatar large">💜</div>
                         <h2>Ciao {userName}!</h2>
                         <p className="welcome-text">
-                            Sono NUR, la tua guida personale. Non sono un bot qualunque -
-                            sono qui per aiutarti davvero, con onestà e (a volte) un po&apos; di sana provocazione.
+                            NUR sta arrivando...
                         </p>
-                        <p className="welcome-sub">Di cosa vuoi parlare?</p>
-                        <div className="starter-prompts">
-                            <button onClick={() => setInput('Come stai oggi?')}>
-                                👋 Salutami
-                            </button>
-                            <button onClick={() => setInput('Ho bisogno di un consiglio')}>
-                                💡 Consiglio
-                            </button>
-                            <button onClick={() => setInput('Mi sento bloccato in questo periodo')}>
-                                🤔 Mi sento bloccato
-                            </button>
-                            <button onClick={() => setInput('Aiutami a fare un piano')}>
-                                📋 Fare un piano
-                            </button>
+                        <div className="nur-loading">
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
+                            <span className="typing-dot"></span>
                         </div>
                     </div>
                 ) : (
