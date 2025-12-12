@@ -327,119 +327,123 @@ function ChatContent() {
         return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     }
 
-    // Funzione per far partire NUR con il primo messaggio automatico
-    const sendInitialNurMessage = async () => {
-        if (!user || status !== 'ready') return
+    // Trigger messaggio iniziale quando: caricamento finito, nessun messaggio, utente presente
+    useEffect(() => {
+        // Funzione interna per evitare problemi di closure
+        const triggerInitialMessage = async () => {
+            if (!user || status !== 'ready') return
 
-        setStatus('thinking')
-        setStatusText('NUR sta pensando...')
+            console.log('[CHAT] Triggering NUR initial message...')
+            setStatus('thinking')
+            setStatusText('NUR sta pensando...')
 
-        try {
-            // Chiama l'API con un messaggio speciale che indica "inizia tu"
-            const response = await fetch('/api/ai/stream', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: '__NUR_START_CONVERSATION__',
-                    userId: user.id,
-                    history: [],
-                    conversationId: null,
-                    area: null,
-                    isInitialMessage: true
+            try {
+                const response = await fetch('/api/ai/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: '__NUR_START_CONVERSATION__',
+                        userId: user.id,
+                        history: [],
+                        conversationId: null,
+                        area: null,
+                        isInitialMessage: true
+                    })
                 })
-            })
 
-            if (!response.ok) {
-                throw new Error('Stream request failed')
-            }
+                if (!response.ok) {
+                    throw new Error('Stream request failed')
+                }
 
-            setStatus('streaming')
-            setStatusText('NUR sta scrivendo...')
+                setStatus('streaming')
+                setStatusText('NUR sta scrivendo...')
 
-            // Crea placeholder per la risposta streaming
-            const streamingMessage: Message = {
-                content: '',
-                role: 'assistant',
-                timestamp: getTimestamp(),
-                isStreaming: true
-            }
-            setMessages([streamingMessage])
+                const streamingMessage: Message = {
+                    content: '',
+                    role: 'assistant',
+                    timestamp: getTimestamp(),
+                    isStreaming: true
+                }
+                setMessages([streamingMessage])
 
-            const reader = response.body?.getReader()
-            const decoder = new TextDecoder()
-            let fullContent = ''
+                const reader = response.body?.getReader()
+                const decoder = new TextDecoder()
+                let fullContent = ''
 
-            if (reader) {
-                while (true) {
-                    const { done, value } = await reader.read()
-                    if (done) break
+                if (reader) {
+                    while (true) {
+                        const { done, value } = await reader.read()
+                        if (done) break
 
-                    const chunk = decoder.decode(value)
-                    const lines = chunk.split('\n\n')
+                        const chunk = decoder.decode(value)
+                        const lines = chunk.split('\n\n')
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.substring(6))
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.substring(6))
 
-                                if (data.text) {
-                                    fullContent += data.text
-                                    setMessages(prev => {
-                                        const newMessages = [...prev]
-                                        const lastMsg = newMessages[newMessages.length - 1]
-                                        if (lastMsg && lastMsg.isStreaming) {
-                                            lastMsg.content = fullContent
-                                        }
-                                        return newMessages
-                                    })
+                                    if (data.text) {
+                                        fullContent += data.text
+                                        setMessages(prev => {
+                                            const newMessages = [...prev]
+                                            const lastMsg = newMessages[newMessages.length - 1]
+                                            if (lastMsg && lastMsg.isStreaming) {
+                                                lastMsg.content = fullContent
+                                            }
+                                            return newMessages
+                                        })
+                                    }
+
+                                    if (data.conversationId) {
+                                        setConversationId(data.conversationId)
+                                    }
+
+                                    if (data.done) {
+                                        setMessages(prev => {
+                                            const newMessages = [...prev]
+                                            const lastMsg = newMessages[newMessages.length - 1]
+                                            if (lastMsg) {
+                                                lastMsg.isStreaming = false
+                                            }
+                                            return newMessages
+                                        })
+                                    }
+
+                                    if (data.error) {
+                                        throw new Error(data.error)
+                                    }
+                                } catch {
+                                    // Ignora errori di parsing
                                 }
-
-                                if (data.conversationId) {
-                                    setConversationId(data.conversationId)
-                                }
-
-                                if (data.done) {
-                                    setMessages(prev => {
-                                        const newMessages = [...prev]
-                                        const lastMsg = newMessages[newMessages.length - 1]
-                                        if (lastMsg) {
-                                            lastMsg.isStreaming = false
-                                        }
-                                        return newMessages
-                                    })
-                                }
-
-                                if (data.error) {
-                                    throw new Error(data.error)
-                                }
-                            } catch (e) {
-                                // Ignora errori di parsing
                             }
                         }
                     }
                 }
+
+                setStatus('ready')
+                setStatusText('NUR è pronta')
+                console.log('[CHAT] NUR initial message completed')
+
+            } catch (error) {
+                console.error('[CHAT] Initial message error:', error)
+                setStatus('ready')
+                setStatusText('NUR è pronta')
             }
-
-            setStatus('ready')
-            setStatusText('NUR è pronta')
-
-        } catch (error) {
-            console.error('Initial message error:', error)
-            setStatus('ready')
-            setStatusText('NUR è pronta')
         }
-    }
 
-    // Trigger messaggio iniziale quando: caricamento finito, nessun messaggio, utente presente
-    useEffect(() => {
+        console.log('[CHAT] Effect check:', { loading, messagesLength: messages.length, user: !!user, status, triggered: hasTriggeredInitialMessage.current })
+
         if (!loading && messages.length === 0 && user && !hasTriggeredInitialMessage.current && status === 'ready') {
             hasTriggeredInitialMessage.current = true
+            console.log('[CHAT] Conditions met! Starting NUR...')
             // Piccolo delay per assicurarsi che tutto sia pronto
             const timer = setTimeout(() => {
-                sendInitialNurMessage()
-            }, 500)
+                triggerInitialMessage()
+            }, 800)
             return () => clearTimeout(timer)
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading, messages.length, user, status])
 
     const sendMessage = async () => {
