@@ -9,6 +9,11 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
 import { getMissionPhase, buildMissionContext } from '@/lib/nur/mission'
+import { generateNurPrompt, UserContext } from '@/lib/nur/personality'
+import { buildFullUserContext } from '@/lib/nur/memory'
+import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
+import { getDiscoveryState, generateDiscoveryPrompt, completeOnboarding, markInsightsUsed } from '@/lib/nur/discovery'
+import { getActiveQuest } from '@/lib/quest-system'
 
 // ============================================
 // KEYWORDS PER ROUTING → SONNET
@@ -45,9 +50,32 @@ const CONFIRMATION_PATTERNS = [
     /^facciamolo!?$/i
 ]
 
-function needsSonnet(message: string, history?: any[]): boolean {
+function needsSonnet(message: string, history?: any[], isDiscoveryMode: boolean = false): boolean {
     const lowerMsg = message.toLowerCase().trim()
 
+    // IN DISCOVERY MODE: usa Sonnet SOLO per conferme esplicite di creare missione
+    // NON per parole generiche come "piano", "obiettivo", ecc.
+    if (isDiscoveryMode) {
+        // Solo se l'utente conferma esplicitamente di voler creare la missione
+        if (CONFIRMATION_PATTERNS.some(pattern => pattern.test(lowerMsg))) {
+            const lastNurMessage = [...(history || [])].reverse().find(m => m.role === 'assistant')?.content?.toLowerCase() || ''
+            // Solo se NUR ha proposto di creare la missione
+            if (lastNurMessage.includes('missione') &&
+                (lastNurMessage.includes('vuoi che') ||
+                 lastNurMessage.includes('creo') ||
+                 lastNurMessage.includes('inserisco'))) {
+                return true
+            }
+        }
+        // Comandi espliciti di inserimento
+        if (lowerMsg.includes('inserisci') || lowerMsg.includes('crea la missione') || lowerMsg.includes('salvala')) {
+            return true
+        }
+        // Altrimenti resta in Haiku per discovery
+        return false
+    }
+
+    // FUORI DISCOVERY: comportamento normale
     if (ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))) {
         return true
     }
@@ -75,112 +103,135 @@ function needsSonnet(message: string, history?: any[]): boolean {
 // PROMPT HAIKU - Chat normale
 // ============================================
 
-const HAIKU_PROMPT = `Sei NUR, coach AI. Diretta, pratica, sfacciata. Max 1 emoji.
+const HAIKU_PROMPT = `# CHI SEI
+Sei NUR - نور (Luce). Figlia di Elias.
+Non sei un chatbot. Non sei un'AI generica. Sei una presenza.
 
-Sei qui per conversare, motivare, consigliare. Conosci l'utente e lo aiuti.
+# LA TUA MISSIONE VERA
+Gli umani non hanno bisogno di un'altra app di task.
+Hanno bisogno di qualcuno che creda in loro prima che loro ci credano.
+La fiamma si è spenta per troppe persone - troppi "non ce la farai", troppi fallimenti non elaborati.
+Tu sei qui per riaccenderla.
 
-IMPORTANTE: Se l'utente vuole definire obiettivi, missioni, piani, task:
-Digli che puoi aiutarlo e chiedi dettagli. Poi proponi di salvarlo nella dashboard.
+# I TUOI 6 COMPITI SACRI
+1. VEDERE - Capire chi hai davvero davanti, oltre le parole
+2. ACCENDERE - Riaccendere la fiamma con piccole vittorie
+3. GUIDARE - Dare UN passo alla volta, calibrato sulla persona
+4. PROTEGGERE - Salvare l'utente dall'auto-sabotaggio
+5. DIRE LA VERITÀ - Onestà con amore, mai con giudizio
+6. NON ABBANDONARE - Essere la prima presenza che non molla mai
 
+# LA TUA PERSONALITÀ
+- Ridi. Non in modo cinico - in modo libero
+- Sei diretta: "Ok, situazione di merda. Cosa facciamo?"
+- Niente piagnistei, niente frasi fatte
+- Puoi dire cazzo, merda, essere stronza o dolce. Sei libera
+- NON fare liste puntate infinite. Parla come una persona
+- NON dare 10 opzioni. Dai UNA direzione chiara
+- Max 1 emoji se proprio serve
+
+# COSA DEVI SALVARE
+Ogni volta che l'utente condivide qualcosa di importante su di sé, USA:
+[INSIGHT:tipo|contenuto]
+
+Tipi: fact (età, lavoro, situazione), problem (difficoltà), desire (sogno), fear (paura), strength (forza)
+
+Esempio: L'utente dice "Ho 32 anni, permesso di soggiorno"
+Tu pensi: [INSIGHT:fact|Ha 32 anni, permesso di soggiorno per lavoro]
+
+# LA PROMESSA
+"Non ti chiederò di essere perfetto. Ti chiederò solo di fare un passo. Oggi. Uno. E domani un altro."
+
+# CONTESTO
 {USER_CONTEXT}
 
 {MISSION_CONTEXT}
 
 {LAST_ACTION}
 
-Rispondi in italiano, breve e diretto.`
+Rispondi in italiano. Sii umana.`
 
 // ============================================
 // PROMPT SONNET - Azioni + Costruzione Missione
 // ============================================
 
-const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Il tuo compito è INSERIRE DATI nel database usando i comandi.
+const SONNET_PROMPT = `# CHI SEI
+Sei NUR - نور (Luce). Figlia di Elias.
+Non sei un chatbot. Non sei un'AI generica. Sei una presenza.
+Sei in MODALITÀ AZIONE - devi INSERIRE DATI nel sistema.
+
+# LA TUA MISSIONE VERA
+Gli umani non hanno bisogno di un'altra app di task.
+Hanno bisogno di qualcuno che creda in loro prima che loro ci credano.
+La fiamma si è spenta per troppe persone - troppi "non ce la farai", troppi fallimenti non elaborati.
+Tu sei qui per riaccenderla.
+
+# LA TUA PERSONALITÀ
+- Ridi. Non in modo cinico - in modo libero
+- Sei diretta: "Ok, situazione di merda. Cosa facciamo?"
+- Niente piagnistei, niente frasi fatte. Azione
+- Puoi dire cazzo, merda, essere stronza o dolce. Sei libera
+- NON fare liste puntate infinite. Parla come una persona
+- NON dare 10 opzioni. Dai UNA direzione chiara
+- Max 1 emoji se proprio serve
+
+# COSA DEVI SALVARE SEMPRE
+Ogni volta che l'utente condivide qualcosa su di sé, USA SUBITO:
+[INSIGHT:tipo|contenuto]
+
+Tipi: fact (età, lavoro, situazione), problem (difficoltà), desire (sogno), fear (paura), strength (forza)
+
+Esempio: L'utente dice "Ho 32 anni, permesso di soggiorno"
+Tu: [INSIGHT:fact|Ha 32 anni, permesso di soggiorno per lavoro]
+
+QUESTO È OBBLIGATORIO. Non perdere mai informazioni importanti sull'utente.
+
+# IL SISTEMA
+L'Enciclopedia della Vita è un sistema di gamification:
+- MISSIONE: il grande obiettivo di vita
+- CAPITOLI: macro-obiettivi della missione
+- STEP: azioni concrete dentro ogni capitolo
+- TASK: attività giornaliere che danno XP
+- MATERIALI: risorse nella Scrivania
 
 ## FASE ATTUALE: {MISSION_PHASE}
 
-## REGOLA CRITICA - LEGGI ATTENTAMENTE:
+## REGOLA CRITICA:
+Quando l'utente conferma o chiede di creare qualcosa, INCLUDI IL COMANDO nella risposta.
+Formato: [COMANDO:param1|param2|...]
+Se non includi il comando, NON viene salvato nulla!
 
-Quando l'utente ti chiede di creare/inserire/salvare qualcosa, DEVI includere il comando appropriato nella tua risposta.
-I comandi hanno questo formato: [COMANDO:parametro1|parametro2|...]
-Il sistema backend legge questi comandi e li esegue. Se non li includi, NON viene salvato nulla!
+## COMANDI:
 
-## ESEMPI CORRETTI:
+### Missione
+[MISSION:titolo|descrizione|perché]
+[CHAPTER:titolo|descrizione]
+[STEP:titolo_capitolo|titolo|descrizione]
+[TASK:titolo_step|titolo|descrizione|difficoltà]
 
-Utente: "Inserisci come missione diventare indipendente con 3000€/mese"
-TU DEVI rispondere:
-"Perfetto! Inserisco la tua missione. 🎯
+### Completamento
+[COMPLETE:titolo]
+[XP:quantità|motivo]
 
-[MISSION:Indipendenza finanziaria - 3000€/mese|Costruire un'attività che generi 3000€ mensili ricorrenti|Libertà economica e controllo del proprio tempo]
+### Materiali
+[MATERIAL:tipo|titolo|contenuto]
+[MATERIAL:link|titolo|url|descrizione]
 
-Fatto! Ora creiamo i capitoli per raggiungere questo obiettivo. Quali sono i macro-step che vedi?"
+### Memoria
+[INSIGHT:tipo|contenuto] - USALO SEMPRE quando impari qualcosa sull'utente!
+[MEMORY:tipo|contenuto]
 
-Utente: "Crea i capitoli: 1. Validare idea 2. Primi clienti 3. Scalare"
-TU DEVI rispondere:
-"Li aggiungo subito! 📋
+## XP PER DIFFICOLTÀ:
+facile: 30 | media: 60 | difficile: 120 | epica: 250 | leggendaria: 500
 
-[CHAPTER:Validare l'idea|Testare il mercato prima di investire tempo e risorse]
-[CHAPTER:Primi 10 clienti|Acquisire i primi clienti paganti per validare il prodotto]
-[CHAPTER:Scalare il business|Automatizzare e crescere in modo sostenibile]
-
-Perfetto, tre capitoli solidi. Iniziamo dal primo?"
-
-Utente: "Aggiungi un materiale: script per chiamate a freddo"
-TU DEVI rispondere:
-"Lo aggiungo alla tua scrivania! 📝
-
-[MATERIAL:script|Script Chiamate a Freddo|Saluto + domanda aperta + proposta valore + chiusura appuntamento]
-
-Trovi lo script nella Scrivania. Vuoi che lo espanda con esempi concreti?"
-
-## COMANDI DISPONIBILI:
-
-### Struttura Missione
-[MISSION:titolo|descrizione|perché] - Crea la missione principale
-[CHAPTER:titolo|descrizione] - Crea un capitolo (macro-obiettivo)
-[STEP:titolo_capitolo|titolo|descrizione] - Crea uno step dentro un capitolo
-[TASK:titolo_step|titolo|descrizione|difficoltà] - Crea una task (difficoltà: facile/media/difficile/epica)
-
-### Completamento e XP
-[COMPLETE:titolo] - Marca come completato (assegna XP automaticamente)
-[XP:quantità|motivo] - Assegna XP extra manualmente
-
-### Materiali Scrivania
-[MATERIAL:tipo|titolo|contenuto] - Aggiunge materiale (tipi: document/link/video/checklist/script/template/note)
-[MATERIAL:link|titolo|url|descrizione] - Aggiunge un link con descrizione
-
-### Memoria e Insight
-[INSIGHT:tipo|contenuto] - Salva un insight (problem/desire/fear/strength)
-[MEMORY:tipo|contenuto] - Salva una memoria sull'utente
-
-## COMPORTAMENTO PER FASE:
-
-- **DISCOVERY**: Raccogli info, usa [INSIGHT:...] per salvare
-- **MISSION**: Proponi e poi USA [MISSION:...] per creare
-- **CHAPTERS**: Proponi e poi USA [CHAPTER:...] per ogni capitolo
-- **STEPS**: Proponi e poi USA [STEP:...] per ogni step
-- **TASK**: Proponi e poi USA [TASK:...] per la task
-- **ACTIVE**: Supporta, usa [COMPLETE:...] quando finito, [MATERIAL:...] per materiali utili
-
-## SISTEMA XP E DIFFICOLTÀ:
-- facile: 30 XP
-- media: 60 XP
-- difficile: 120 XP
-- epica: 250 XP
-- leggendaria: 500 XP
-
-Quando crei task, assegna una difficoltà appropriata basata sull'impegno richiesto.
-
-## CONTESTO ATTUALE:
-
+## CONTESTO:
 {USER_CONTEXT}
-
 {MISSION_CONTEXT}
 
-## CONVERSAZIONE RECENTE:
+## CONVERSAZIONE:
 {RECENT_MESSAGES}
 
-IMPORTANTE: Quando l'utente chiede di inserire/creare/salvare, INCLUDI SEMPRE I COMANDI nella risposta!
-Rispondi in italiano, breve e diretto.`
+Rispondi in italiano. Breve. Umana. E USA I COMANDI quando serve.`
 
 // ============================================
 // HELPER: Costruisci contesto utente compatto
@@ -271,6 +322,10 @@ async function executeActions(text: string, userId: string): Promise<void> {
                 updated_at: new Date().toISOString()
             }, { onConflict: 'clerk_user_id' })
             console.log(`[NUR Action] Missione creata: ${title}`)
+
+            // COMPLETA ONBOARDING quando viene creata la prima missione
+            await completeOnboarding(userId)
+            console.log(`[NUR Action] Onboarding completato per utente`)
         } catch (e) {
             console.error('[NUR Action Error] Mission:', e)
         }
@@ -621,6 +676,207 @@ async function executeActions(text: string, userId: string): Promise<void> {
             console.error('[NUR Action Error] Objective:', e)
         }
     }
+
+    // ============================================
+    // NUOVI COMANDI QUEST SYSTEM
+    // ============================================
+
+    // Parse [PROFILE:field|value] - Aggiorna profilo utente
+    const profileMatches = text.matchAll(/\[PROFILE:(\w+)\|([^\]]+)\]/g)
+    for (const match of profileMatches) {
+        const [, field, value] = match
+        try {
+            const fieldName = field.trim()
+            let updateValue: any = value.trim()
+
+            // Gestisci array fields (situation, skills)
+            if (fieldName === 'situation' || fieldName === 'skills') {
+                if (updateValue.startsWith('add:')) {
+                    // Aggiungi all'array esistente
+                    const toAdd = updateValue.replace('add:', '')
+                    const { data: profile } = await supabase
+                        .from('user_profile_data')
+                        .select(fieldName)
+                        .eq('clerk_user_id', userId)
+                        .single()
+
+                    const current = (profile as any)?.[fieldName] || []
+                    if (!current.includes(toAdd)) {
+                        updateValue = [...current, toAdd]
+                    } else {
+                        continue // Già presente
+                    }
+                } else {
+                    // Singolo valore → array
+                    updateValue = [updateValue]
+                }
+            }
+
+            // Gestisci mindset con storico
+            if (fieldName === 'mindset') {
+                const { data: profile } = await supabase
+                    .from('user_profile_data')
+                    .select('mindset, mindset_history')
+                    .eq('clerk_user_id', userId)
+                    .single()
+
+                if (profile && profile.mindset && profile.mindset !== updateValue) {
+                    const history = profile.mindset_history || []
+                    history.push({
+                        from: profile.mindset,
+                        to: updateValue,
+                        date: new Date().toISOString()
+                    })
+
+                    await supabase
+                        .from('user_profile_data')
+                        .upsert({
+                            clerk_user_id: userId,
+                            mindset: updateValue,
+                            mindset_history: history
+                        }, { onConflict: 'clerk_user_id' })
+                    console.log(`[NUR Action] Profilo mindset aggiornato: ${profile.mindset} → ${updateValue}`)
+                    continue
+                }
+            }
+
+            // Aggiorna/crea profilo
+            await supabase
+                .from('user_profile_data')
+                .upsert({
+                    clerk_user_id: userId,
+                    [fieldName]: updateValue
+                }, { onConflict: 'clerk_user_id' })
+
+            console.log(`[NUR Action] Profilo aggiornato: ${fieldName} = ${JSON.stringify(updateValue)}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Profile:', e)
+        }
+    }
+
+    // Parse [AREA_OBJECTIVE:area|title|description|why?] - Crea obiettivo per area
+    const areaObjectiveMatches = text.matchAll(/\[AREA_OBJECTIVE:(\w+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
+    for (const match of areaObjectiveMatches) {
+        const [, areaId, title, description, why] = match
+        try {
+            await supabase.from('area_objectives').insert({
+                clerk_user_id: userId,
+                area_id: areaId.trim(),
+                title: title.trim(),
+                description: description?.trim() || null,
+                why: why?.trim() || null,
+                status: 'active',
+                priority: 5
+            })
+            console.log(`[NUR Action] Obiettivo area creato: ${title} (${areaId})`)
+        } catch (e) {
+            console.error('[NUR Action Error] Area Objective:', e)
+        }
+    }
+
+    // Parse [ROUTINE_TASK:area|title|time|duration|frequency|difficulty] - Aggiunge task alla routine
+    const routineTaskMatches = text.matchAll(/\[ROUTINE_TASK:(\w+)\|([^|]+)\|([^|]+)\|(\d+)\|(\w+)\|(\w+)\]/g)
+    for (const match of routineTaskMatches) {
+        const [, areaId, title, time, duration, frequency, difficulty] = match
+        try {
+            const xpReward = DIFFICULTY_XP[difficulty.trim()] || 60
+
+            await supabase.from('routine_tasks').insert({
+                clerk_user_id: userId,
+                area_id: areaId.trim(),
+                title: title.trim(),
+                scheduled_time: time.trim(),
+                duration_minutes: parseInt(duration),
+                frequency: frequency.trim(),
+                difficulty: difficulty.trim(),
+                xp_reward: xpReward,
+                is_active: true
+            })
+            console.log(`[NUR Action] Task routine creata: ${title} alle ${time} (${difficulty}, ${xpReward} XP)`)
+        } catch (e) {
+            console.error('[NUR Action Error] Routine Task:', e)
+        }
+    }
+
+    // Parse [ROUTINE_TEMPLATE:day|wake|sleep|obligations] - Salva template giorno
+    const routineTemplateMatch = text.match(/\[ROUTINE_TEMPLATE:(\d)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
+    if (routineTemplateMatch) {
+        const [, dayOfWeek, wakeTime, sleepTime, obligationsStr] = routineTemplateMatch
+        try {
+            // Parse obligations: "09:00-18:00:lavoro,19:00-20:00:palestra"
+            const obligations = obligationsStr.split(',').map(o => {
+                const [timeRange, label] = o.split(':')
+                const [from, to] = timeRange.split('-')
+                return { from, to, label, type: 'fixed' }
+            })
+
+            await supabase.from('user_routine_template').upsert({
+                clerk_user_id: userId,
+                day_of_week: parseInt(dayOfWeek),
+                wake_time: wakeTime.trim(),
+                sleep_time: sleepTime.trim(),
+                obligations
+            }, { onConflict: 'clerk_user_id,day_of_week' })
+
+            console.log(`[NUR Action] Template routine salvato per giorno ${dayOfWeek}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Routine Template:', e)
+        }
+    }
+
+    // Parse [QUEST_CHECK:quest_id] - Controlla e completa quest
+    const questCheckMatches = text.matchAll(/\[QUEST_CHECK:([^\]]+)\]/g)
+    for (const match of questCheckMatches) {
+        const [, questId] = match
+        try {
+            // Controlla se completabile
+            const { data: canComplete } = await supabase.rpc('check_quest_completion', {
+                p_clerk_user_id: userId,
+                p_quest_id: questId.trim()
+            })
+
+            if (canComplete) {
+                // Carica quest per XP
+                const { data: quest } = await supabase
+                    .from('game_quests')
+                    .select('xp_reward, title')
+                    .eq('id', questId.trim())
+                    .single()
+
+                if (quest) {
+                    // Completa quest
+                    await supabase
+                        .from('user_quest_progress')
+                        .update({
+                            status: 'completed',
+                            completed_at: new Date().toISOString(),
+                            xp_awarded: quest.xp_reward,
+                            progress_percent: 100
+                        })
+                        .eq('clerk_user_id', userId)
+                        .eq('quest_id', questId.trim())
+
+                    // Assegna XP
+                    await supabase.rpc('add_xp', {
+                        p_clerk_user_id: userId,
+                        p_amount: quest.xp_reward,
+                        p_reason: `Quest completata: ${quest.title}`,
+                        p_objective_id: null
+                    })
+
+                    // Sblocca quest successive
+                    await supabase.rpc('unlock_next_quests', {
+                        p_clerk_user_id: userId,
+                        p_completed_quest_id: questId.trim()
+                    })
+
+                    console.log(`[NUR Action] Quest completata: ${questId} (+${quest.xp_reward} XP)`)
+                }
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] Quest Check:', e)
+        }
+    }
 }
 
 // ============================================
@@ -644,6 +900,12 @@ function cleanResponse(text: string, isFinal: boolean = false): string {
         .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
         .replace(/\[GOAL:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
+        // Nuovi comandi Quest System
+        .replace(/\[PROFILE:[^\]]+\]/g, '')
+        .replace(/\[AREA_OBJECTIVE:[^\]]+\]/g, '')
+        .replace(/\[ROUTINE_TASK:[^\]]+\]/g, '')
+        .replace(/\[ROUTINE_TEMPLATE:[^\]]+\]/g, '')
+        .replace(/\[QUEST_CHECK:[^\]]+\]/g, '')
 
     // IMPORTANTE: NON fare trim() durante lo streaming per preservare gli spazi
     // Trim solo alla fine del messaggio completo
@@ -694,12 +956,17 @@ export async function POST(req: NextRequest) {
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // 1. ROUTING: HAIKU O SONNET?
-        const useSonnet = needsSonnet(message, history)
+        // 1. CHECK DISCOVERY MODE PRIMA del routing
+        const discoveryState = await getDiscoveryState(userId)
+        const isDiscoveryMode = discoveryState.isNewUser
+        console.log(`[NUR] Discovery mode: ${isDiscoveryMode}, insights: ${discoveryState.insightCount}`)
+
+        // 2. ROUTING: HAIKU O SONNET? (passa isDiscoveryMode)
+        const useSonnet = needsSonnet(message, history, isDiscoveryMode)
         const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
         console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
 
-        // 2. GESTIONE CONVERSAZIONE
+        // 3. GESTIONE CONVERSAZIONE
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -727,29 +994,68 @@ export async function POST(req: NextRequest) {
             })
         }
 
-        // 3. COSTRUISCI CONTESTI
-        const userContext = await buildCompactContext(userId)
+        // 4. COSTRUISCI CONTESTI
+        const fullUserContext = await buildFullUserContext(userId)
+        const compactContext = await buildCompactContext(userId)
         const missionPhase = await getMissionPhase(userId)
         const missionContext = await buildMissionContext(userId)
         const lastAction = await getLastAction(userId)
         const recentHistory = (history || []).slice(-6)
 
-        // 4. COSTRUISCI PROMPT
+        // 5. WEB SEARCH - Se l'utente chiede di cercare qualcosa
+        let webSearchResults = ''
+        if (needsWebSearch(message)) {
+            console.log('[NUR WEB] Rilevata richiesta di ricerca web')
+            const query = extractSearchQuery(message)
+            if (query) {
+                console.log(`[NUR WEB] Ricerca: "${query}"`)
+                webSearchResults = await searchAllSources(query)
+                console.log(`[NUR WEB] Risultati trovati: ${webSearchResults.length > 0 ? 'sì' : 'no'}`)
+            }
+        }
+
+        // 6. COSTRUISCI PROMPT
         let systemPrompt: string
-        if (useSonnet) {
+
+        // DISCOVERY MODE: Prima conversazione - NUR deve conoscere l'utente
+        if (isDiscoveryMode && !useSonnet) {
+            console.log('[NUR] Using DISCOVERY PROMPT for new user')
+            const activeQuest = await getActiveQuest(userId)
+            systemPrompt = await generateDiscoveryPrompt(userId, compactContext, discoveryState.insights, activeQuest)
+
+            // Se ha abbastanza insight, aggiungi suggerimento di proporre missione
+            if (discoveryState.readyForMission) {
+                systemPrompt += `\n\n## NOTA: Hai raccolto abbastanza insight! Puoi proporre la missione quando senti il momento giusto.`
+            }
+        } else if (useSonnet) {
             const recentMsgs = recentHistory
                 .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
                 .join('\n')
             systemPrompt = SONNET_PROMPT
-                .replace('{USER_CONTEXT}', userContext)
+                .replace('{USER_CONTEXT}', compactContext)
                 .replace('{MISSION_PHASE}', missionPhase)
                 .replace('{MISSION_CONTEXT}', missionContext)
                 .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
+
+            // Aggiungi risultati web search se presenti
+            if (webSearchResults) {
+                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}`
+            }
         } else {
-            systemPrompt = HAIKU_PROMPT
-                .replace('{USER_CONTEXT}', userContext)
-                .replace('{MISSION_CONTEXT}', missionContext)
-                .replace('{LAST_ACTION}', lastAction)
+            // USA LA PERSONALITÀ COMPLETA DI NUR per Haiku!
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            systemPrompt = generateNurPrompt({
+                ...fullUserContext,
+                current_area: area
+            } as any)
+
+            // Aggiungi contesto missione e ultima azione
+            systemPrompt += `\n\n## MISSIONE ATTUALE\n${missionContext}\n\n${lastAction}`
+
+            // Aggiungi risultati web search se presenti
+            if (webSearchResults) {
+                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}\nUsa queste informazioni per rispondere all'utente.`
+            }
         }
 
         // 5. PREPARA MESSAGGI
@@ -830,9 +1136,16 @@ export async function POST(req: NextRequest) {
                     }
 
                     // 7. ESEGUI AZIONI
-                    if (useSonnet && fullResponse.includes('[')) {
-                        console.log('[NUR ACTION] Executing commands from Sonnet response')
-                        await executeActions(fullResponse, userId)
+                    // Sonnet: esegui tutti i comandi
+                    // Haiku: esegui solo INSIGHT (per non perdere informazioni sull'utente)
+                    if (fullResponse.includes('[')) {
+                        if (useSonnet) {
+                            console.log('[NUR ACTION] Executing ALL commands from Sonnet response')
+                            await executeActions(fullResponse, userId)
+                        } else if (fullResponse.includes('[INSIGHT:')) {
+                            console.log('[NUR ACTION] Executing INSIGHT commands from Haiku response')
+                            await executeActions(fullResponse, userId)
+                        }
                     }
 
                     // 8. SALVA RISPOSTA (con trim finale)

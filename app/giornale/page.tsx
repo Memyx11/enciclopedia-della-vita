@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useUser } from '@clerk/nextjs'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import FileUpload from '@/components/ui/FileUpload'
 import './giornale.css'
 
 // ============================================
@@ -15,13 +16,16 @@ interface TaskMaterial {
     objective_id: string | null
     title: string
     description: string | null
-    material_type: 'document' | 'link' | 'video' | 'checklist' | 'script' | 'template' | 'note'
+    material_type: 'document' | 'link' | 'video' | 'checklist' | 'script' | 'template' | 'note' | 'image'
     content: string | null
     url: string | null
     icon: string
     sort_order: number
     created_by: 'nur' | 'user'
     created_at: string
+    file_path?: string | null
+    file_size?: number | null
+    file_mime_type?: string | null
 }
 
 interface Objective {
@@ -54,7 +58,8 @@ const MATERIAL_TYPE_CONFIG: Record<string, { icon: string; label: string; color:
     checklist: { icon: '✅', label: 'Checklist', color: '#fab005' },
     script: { icon: '📝', label: 'Script', color: '#cc5de8' },
     template: { icon: '📋', label: 'Template', color: '#20c997' },
-    note: { icon: '💭', label: 'Nota', color: '#845ef7' }
+    note: { icon: '💭', label: 'Nota', color: '#845ef7' },
+    image: { icon: '🖼️', label: 'Immagine', color: '#f59e0b' }
 }
 
 // ============================================
@@ -78,6 +83,7 @@ export default function ScrivaniaPage() {
 
     // New material form
     const [showAddForm, setShowAddForm] = useState(false)
+    const [showUploadForm, setShowUploadForm] = useState(false)
     const [newMaterial, setNewMaterial] = useState({
         title: '',
         content: '',
@@ -343,13 +349,37 @@ export default function ScrivaniaPage() {
                                 : 'Inizia aggiungendo materiali o parla con NUR'}
                         </p>
                         <div className="empty-actions">
+                            <button className="btn-upload" onClick={() => setShowUploadForm(true)}>
+                                <span>📤</span> Carica file
+                            </button>
                             <button className="btn-add" onClick={() => setShowAddForm(true)}>
-                                <span>➕</span> Aggiungi materiale
+                                <span>➕</span> Aggiungi nota
                             </button>
                             <Link href="/chat" className="btn-nur">
                                 <span>💬</span> Chiedi a NUR
                             </Link>
                         </div>
+
+                        {/* Upload Form */}
+                        {showUploadForm && user && (
+                            <div className="upload-modal">
+                                <div className="upload-modal-header">
+                                    <h3>Carica un file</h3>
+                                    <button className="close-btn" onClick={() => setShowUploadForm(false)}>✕</button>
+                                </div>
+                                <FileUpload
+                                    userId={user.id}
+                                    objectiveId={activeTask?.id}
+                                    onUploadComplete={(material) => {
+                                        setShowUploadForm(false)
+                                        loadData()
+                                    }}
+                                    onUploadError={(error) => {
+                                        console.error('Upload error:', error)
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="materials-grid">
@@ -465,7 +495,48 @@ export default function ScrivaniaPage() {
                         })}
                     </div>
                 )}
+
+                {/* Floating Action Buttons */}
+                {!loading && displayMaterials.length > 0 && (
+                    <div className="fab-container">
+                        <button className="fab fab-upload" onClick={() => setShowUploadForm(true)}>
+                            <span>📤</span>
+                        </button>
+                        <button className="fab fab-add" onClick={() => setShowAddForm(true)}>
+                            <span>➕</span>
+                        </button>
+                    </div>
+                )}
             </main>
+
+            {/* ===== UPLOAD MODAL ===== */}
+            {showUploadForm && user && (
+                <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
+                    <div className="add-modal upload-modal-full" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>📤 Carica File</h2>
+                            <button className="close-btn" onClick={() => setShowUploadForm(false)}>✕</button>
+                        </div>
+                        <div className="upload-content-area">
+                            <FileUpload
+                                userId={user.id}
+                                objectiveId={activeTask?.id}
+                                onUploadComplete={(material) => {
+                                    setShowUploadForm(false)
+                                    loadData()
+                                }}
+                                onUploadError={(error) => {
+                                    console.error('Upload error:', error)
+                                }}
+                            />
+                            <div className="upload-info">
+                                <p>Tipi supportati: PDF, Word, TXT, immagini, video</p>
+                                <p>Dimensione massima: 10MB</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ===== ADD MATERIAL FORM ===== */}
             {showAddForm && (

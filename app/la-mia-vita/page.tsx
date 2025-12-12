@@ -71,6 +71,26 @@ type ActivePanel = null | 'desk' | 'dashboard' | 'notes'
 // RANK CONFIG
 // ============================================
 
+// Titoli per livello (stile RPG)
+function getLevelTitle(level: number): { title: string; emoji: string } {
+    if (level <= 5) return { title: 'Dormiente', emoji: '🌱' }
+    if (level <= 10) return { title: 'Risvegliato', emoji: '🌿' }
+    if (level <= 15) return { title: 'Cercatore', emoji: '🌳' }
+    if (level <= 20) return { title: 'Viaggiatore', emoji: '⭐' }
+    if (level <= 30) return { title: 'Maestro', emoji: '🔥' }
+    if (level <= 50) return { title: 'Saggio', emoji: '👑' }
+    return { title: 'Leggenda', emoji: '🌌' }
+}
+
+// Moltiplicatore streak
+function getStreakMultiplier(streak: number): number {
+    if (streak >= 30) return 2.0
+    if (streak >= 14) return 1.5
+    if (streak >= 7) return 1.25
+    if (streak >= 3) return 1.1
+    return 1.0
+}
+
 const RANK_CONFIG: Record<string, { emoji: string; title: string }> = {
     'dormiente': { emoji: '🌱', title: 'Dormiente' },
     'risvegliato': { emoji: '🌿', title: 'Risvegliato' },
@@ -165,6 +185,10 @@ export default function LaMiaVitaPage() {
     const [showModal, setShowModal] = useState(false)
     const [xpGained, setXpGained] = useState(0)
 
+    // Onboarding
+    const [isNewUser, setIsNewUser] = useState(false)
+    const [xpToday, setXpToday] = useState(0)
+
     // Computed
     const chapters = objectives.filter(o => o.level === 'major')
     const completedChapters = chapters.filter(c => c.status === 'completed').length
@@ -182,6 +206,8 @@ export default function LaMiaVitaPage() {
         : 0
 
     const rankInfo = RANK_CONFIG[profile.rank] || RANK_CONFIG['dormiente']
+    const levelTitle = getLevelTitle(profile.level)
+    const streakMultiplier = getStreakMultiplier(profile.streak)
     const xpProgress = profile.xp_to_next_level > 0
         ? Math.round((profile.xp / profile.xp_to_next_level) * 100)
         : 0
@@ -194,10 +220,10 @@ export default function LaMiaVitaPage() {
         if (!user) return
 
         try {
-            // Load profile with game stats
+            // Load profile with game stats AND onboarding status
             const { data: profileData } = await supabase
                 .from('profiles')
-                .select('level, xp, xp_to_next_level, streak, lives, max_lives, rank, rank_bonus, game_over')
+                .select('level, xp, xp_to_next_level, streak, lives, max_lives, rank, rank_bonus, game_over, onboarding_completed')
                 .eq('clerk_user_id', user.id)
                 .single()
 
@@ -213,6 +239,11 @@ export default function LaMiaVitaPage() {
                     rank_bonus: profileData.rank_bonus || 0,
                     game_over: profileData.game_over || false
                 })
+                // Check if new user
+                setIsNewUser(!profileData.onboarding_completed)
+            } else {
+                // No profile = definitely new user
+                setIsNewUser(true)
             }
 
             // Load mission
@@ -431,7 +462,7 @@ export default function LaMiaVitaPage() {
                             </div>
                         </div>
                         <div className="player-info">
-                            <div className="player-rank">{rankInfo.emoji} {rankInfo.title}</div>
+                            <div className="player-rank">{levelTitle.emoji} {levelTitle.title}</div>
                             <div className="xp-row">
                                 <div className="xp-bar">
                                     <div className="xp-fill" style={{ width: `${xpProgress}%` }}></div>
@@ -442,9 +473,10 @@ export default function LaMiaVitaPage() {
                     </div>
 
                     <div className="stats">
-                        <div className="streak">
+                        <div className="streak" title={`${streakMultiplier}x XP`}>
                             <span>🔥</span>
                             <span>{profile.streak}</span>
+                            {streakMultiplier > 1 && <span className="streak-mult">×{streakMultiplier}</span>}
                         </div>
                         <div className="lives">
                             {Array.from({ length: profile.max_lives }).map((_, i) => (
@@ -461,9 +493,48 @@ export default function LaMiaVitaPage() {
             ═══════════════════════════════════════════ */}
             <main className="main">
                 {/* ═══════════════════════════════════════════
-                    STATO 0: EMPTY - Nessuna missione
+                    ONBOARDING SCREEN - Prima visita
                 ═══════════════════════════════════════════ */}
-                {phase === 'empty' && (
+                {isNewUser && phase === 'empty' && (
+                    <section className="onboarding-screen">
+                        <div className="onboarding-glow"></div>
+                        <div className="nur-avatar-large">
+                            <div className="avatar-ring"></div>
+                            <span className="avatar-emoji">🌟</span>
+                        </div>
+                        <h1 className="onboarding-title">Ciao! Sono NUR</h1>
+                        <p className="onboarding-subtitle">
+                            Il tuo coach personale per trasformare i sogni in realtà.
+                        </p>
+
+                        <div className="first-quest">
+                            <div className="quest-badge">
+                                <span>⭐</span> PRIMA QUEST
+                            </div>
+                            <h3>Parlami di te</h3>
+                            <p>Raccontami chi sei e cosa vuoi raggiungere.</p>
+                            <div className="quest-reward">
+                                <span className="reward-xp">+100 XP</span>
+                            </div>
+                        </div>
+
+                        <Link href="/chat" className="btn-primary-lg pulse">
+                            💬 Inizia la conversazione
+                        </Link>
+
+                        <div className="preview-blurred">
+                            <div className="preview-item">📊 Dashboard</div>
+                            <div className="preview-item">🎯 Missioni</div>
+                            <div className="preview-item">📚 Scrivania</div>
+                            <div className="preview-item">🔥 Streak</div>
+                        </div>
+                    </section>
+                )}
+
+                {/* ═══════════════════════════════════════════
+                    STATO 0: EMPTY - Nessuna missione (utente non nuovo)
+                ═══════════════════════════════════════════ */}
+                {!isNewUser && phase === 'empty' && (
                     <section className="empty-state">
                         <div className="empty-icon">🎯</div>
                         <h3>Qual è il tuo obiettivo?</h3>
@@ -528,7 +599,27 @@ export default function LaMiaVitaPage() {
                                     )}
 
                                     <div className="task-rewards">
-                                        <div className="reward xp">✨ +{activeTask.xp_reward || DIFFICULTY_XP[activeTask.difficulty || 'media']} XP</div>
+                                        {/* XP Breakdown */}
+                                        {(() => {
+                                            const baseXp = activeTask.xp_reward || DIFFICULTY_XP[activeTask.difficulty || 'media'] || 60
+                                            const totalXp = Math.round(baseXp * streakMultiplier)
+                                            const hasBonus = streakMultiplier > 1
+
+                                            return (
+                                                <div className="xp-breakdown">
+                                                    {hasBonus ? (
+                                                        <>
+                                                            <span className="xp-base">{baseXp}</span>
+                                                            <span className="xp-mult">× {streakMultiplier}</span>
+                                                            <span className="xp-equals">=</span>
+                                                            <span className="xp-total">+{totalXp} XP</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="xp-total">+{baseXp} XP</span>
+                                                    )}
+                                                </div>
+                                            )
+                                        })()}
                                         <div className="reward">⚔️ {activeTask.difficulty || 'Media'}</div>
                                         {activeTask.estimated_minutes && (
                                             <div className="reward">⏱️ ~{activeTask.estimated_minutes} min</div>
@@ -765,6 +856,10 @@ export default function LaMiaVitaPage() {
                     <Link href="/chat" className="nav-item">
                         <span className="nav-icon">💬</span>
                         <span className="nav-label">NUR</span>
+                    </Link>
+                    <Link href="/quest" className="nav-item">
+                        <span className="nav-icon">🎮</span>
+                        <span className="nav-label">Quest</span>
                     </Link>
                     <Link href="/giornale" className="nav-item">
                         <span className="nav-icon">🗂️</span>
@@ -1802,6 +1897,222 @@ const styles = `
     }
 
     /* ═══════════════════════════════════════════
+       STREAK MULTIPLIER
+    ═══════════════════════════════════════════ */
+    .streak-mult {
+        font-size: 0.625rem;
+        background: rgba(245, 158, 11, 0.3);
+        padding: 2px 6px;
+        border-radius: 10px;
+        margin-left: 4px;
+    }
+
+    /* ═══════════════════════════════════════════
+       XP BREAKDOWN
+    ═══════════════════════════════════════════ */
+    .xp-breakdown {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 16px;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(217, 70, 239, 0.1));
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        border-radius: 12px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .xp-base {
+        color: var(--text-dim);
+        font-size: 0.875rem;
+    }
+
+    .xp-mult {
+        color: var(--warning);
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+
+    .xp-equals {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
+
+    .xp-total {
+        color: var(--success);
+        font-weight: 800;
+        font-size: 1rem;
+    }
+
+    /* ═══════════════════════════════════════════
+       ONBOARDING SCREEN
+    ═══════════════════════════════════════════ */
+    .onboarding-screen {
+        text-align: center;
+        padding: 60px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+    }
+
+    .onboarding-glow {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%);
+        pointer-events: none;
+    }
+
+    .nur-avatar-large {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin-bottom: 24px;
+    }
+
+    .avatar-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        animation: pulse-ring 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-ring {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1); opacity: 0.7; }
+    }
+
+    .avatar-emoji {
+        position: absolute;
+        inset: 8px;
+        background: var(--surface);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3.5rem;
+    }
+
+    .onboarding-title {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 12px;
+        background: linear-gradient(90deg, var(--text), var(--primary-light));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .onboarding-subtitle {
+        color: var(--text-dim);
+        font-size: 1.125rem;
+        margin-bottom: 40px;
+        max-width: 400px;
+    }
+
+    .first-quest {
+        background: var(--surface);
+        border: 2px solid rgba(139, 92, 246, 0.3);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 32px;
+        width: 100%;
+        max-width: 400px;
+    }
+
+    .quest-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: rgba(139, 92, 246, 0.15);
+        border-radius: 100px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--primary-light);
+        margin-bottom: 12px;
+    }
+
+    .first-quest h3 {
+        font-size: 1.25rem;
+        margin-bottom: 8px;
+    }
+
+    .first-quest p {
+        color: var(--text-dim);
+        font-size: 0.9375rem;
+        margin-bottom: 16px;
+    }
+
+    .quest-reward {
+        display: flex;
+        justify-content: center;
+    }
+
+    .reward-xp {
+        background: linear-gradient(90deg, var(--success), #10b981);
+        color: white;
+        padding: 8px 20px;
+        border-radius: 100px;
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 800;
+        font-size: 1rem;
+    }
+
+    .btn-primary-lg {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 18px 36px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        border: none;
+        border-radius: 16px;
+        color: white;
+        font-size: 1.125rem;
+        font-weight: 700;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .btn-primary-lg:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 20px 40px var(--primary-glow);
+    }
+
+    .btn-primary-lg.pulse {
+        animation: btn-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes btn-pulse {
+        0%, 100% { box-shadow: 0 10px 30px var(--primary-glow); }
+        50% { box-shadow: 0 20px 50px rgba(139, 92, 246, 0.6); }
+    }
+
+    .preview-blurred {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 48px;
+        opacity: 0.4;
+        filter: blur(2px);
+    }
+
+    .preview-item {
+        padding: 10px 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+    }
+
+    /* ═══════════════════════════════════════════
        RESPONSIVE
     ═══════════════════════════════════════════ */
     @media (max-width: 640px) {
@@ -1814,5 +2125,8 @@ const styles = `
         .xp-bar { width: 60px; }
         .task-actions { flex-direction: column; }
         .dash-grid { grid-template-columns: 1fr 1fr; }
+        .onboarding-title { font-size: 1.5rem; }
+        .nur-avatar-large { width: 100px; height: 100px; }
+        .avatar-emoji { font-size: 2.5rem; }
     }
 `
