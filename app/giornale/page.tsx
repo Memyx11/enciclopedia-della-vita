@@ -99,13 +99,13 @@ export default function ScrivaniaPage() {
         if (!user) return
 
         try {
-            // Load mission
+            // Load mission (maybeSingle perché potrebbe non esistere)
             const { data: missionData } = await supabase
                 .from('user_mission')
                 .select('*')
                 .eq('clerk_user_id', user.id)
                 .eq('status', 'active')
-                .single()
+                .maybeSingle()
 
             setMission(missionData)
 

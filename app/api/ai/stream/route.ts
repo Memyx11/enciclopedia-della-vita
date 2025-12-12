@@ -647,7 +647,7 @@ async function executeActions(text: string, userId: string): Promise<void> {
                 .from('user_mission')
                 .select('id')
                 .eq('clerk_user_id', userId)
-                .single()
+                .maybeSingle()
 
             let parentId = null
             if (parent !== 'mission' && parent !== 'null') {

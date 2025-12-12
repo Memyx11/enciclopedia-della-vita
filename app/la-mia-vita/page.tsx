@@ -246,13 +246,13 @@ export default function LaMiaVitaPage() {
                 setIsNewUser(true)
             }
 
-            // Load mission
+            // Load mission (maybeSingle perché potrebbe non esistere)
             const { data: missionData } = await supabase
                 .from('user_mission')
                 .select('*')
                 .eq('clerk_user_id', user.id)
                 .eq('status', 'active')
-                .single()
+                .maybeSingle()
 
             if (missionData) {
                 setMission(missionData)
