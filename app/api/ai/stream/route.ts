@@ -130,6 +130,56 @@ export async function POST(req: NextRequest) {
             })
         }
 
+        // ========== MESSAGE LIMIT CHECK (20/day) ==========
+        const { data: limitCheck, error: limitError } = await supabase.rpc('check_and_increment_messages', {
+            p_clerk_user_id: userId,
+            p_limit: 20
+        })
+
+        if (limitError) {
+            console.log('[NUR LIMIT] RPC error, using fallback:', limitError.message)
+            // Fallback: controlla manualmente
+            const today = new Date().toISOString().split('T')[0]
+            const { data: countData } = await supabase
+                .from('user_daily_messages')
+                .select('count')
+                .eq('clerk_user_id', userId)
+                .eq('date', today)
+                .single()
+
+            const currentCount = countData?.count || 0
+            if (currentCount >= 20) {
+                return new Response(
+                    JSON.stringify({
+                        error: 'limit_reached',
+                        message: 'Hai raggiunto il limite di 20 messaggi per oggi. Torna domani!',
+                        count: currentCount,
+                        limit: 20
+                    }),
+                    { status: 429, headers: { 'Content-Type': 'application/json' } }
+                )
+            }
+            // Incrementa manualmente
+            await supabase
+                .from('user_daily_messages')
+                .upsert({
+                    clerk_user_id: userId,
+                    date: today,
+                    count: currentCount + 1
+                }, { onConflict: 'clerk_user_id,date' })
+        } else if (!limitCheck?.allowed) {
+            return new Response(
+                JSON.stringify({
+                    error: 'limit_reached',
+                    message: 'Hai raggiunto il limite di 20 messaggi per oggi. Torna domani!',
+                    count: limitCheck.count,
+                    limit: limitCheck.limit
+                }),
+                { status: 429, headers: { 'Content-Type': 'application/json' } }
+            )
+        }
+        // ===================================================
+
         // Determina se NUR deve iniziare la conversazione
         const isNurStarting = message === '__NUR_START_CONVERSATION__' || isInitialMessage
 
@@ -220,8 +270,14 @@ export async function POST(req: NextRequest) {
 
                     const stream = anthropic.messages.stream({
                         model: modelToUse,
-                        max_tokens: useSonnet ? 1200 : 500,
-                        system: systemPrompt,
+                        max_tokens: 500, // Ridotto per risposte brevi
+                        system: [
+                            {
+                                type: 'text',
+                                text: systemPrompt,
+                                cache_control: { type: 'ephemeral' } // Abilita caching
+                            }
+                        ],
                         messages
                     })
 
