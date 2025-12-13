@@ -302,7 +302,6 @@ export async function checkAllQuests(userId: string): Promise<string[]> {
         console.error('[Quest] Exception:', e)
         return await checkAllQuestsManual(userId)
     }
-    }
 }
 
 /**
