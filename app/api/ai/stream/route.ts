@@ -14,6 +14,8 @@ import { buildFullUserContext } from '@/lib/nur/memory'
 import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
 import { getDiscoveryState, generateDiscoveryPrompt, completeOnboarding, markInsightsUsed } from '@/lib/nur/discovery'
 import { getActiveQuest } from '@/lib/quest-system'
+import { generateNurPrompt as generateUnifiedPrompt } from "@/lib/nur/prompt"
+import { parseToolCalls, executeToolCalls, cleanToolCalls } from "@/lib/nur/tools"
 
 // ============================================
 // KEYWORDS PER ROUTING → SONNET
@@ -884,29 +886,9 @@ async function executeActions(text: string, userId: string): Promise<void> {
 // ============================================
 
 function cleanResponse(text: string, isFinal: boolean = false): string {
-    // Rimuovi i comandi NUR dal testo
-    let cleaned = text
-        .replace(/\[INSIGHT:[^\]]+\]/g, '')
-        .replace(/\[MISSION:[^\]]+\]/g, '')
-        .replace(/\[CHAPTER:[^\]]+\]/g, '')
-        .replace(/\[STEP:[^\]]+\]/g, '')
-        .replace(/\[TASK:[^\]]+\]/g, '')
-        .replace(/\[COMPLETE:[^\]]+\]/g, '')
-        .replace(/\[PROGRESS:[^\]]+\]/g, '')
-        .replace(/\[SAVE:[^\]]+\]/g, '')
-        .replace(/\[MEMORY:[^\]]+\]/g, '')
-        .replace(/\[MATERIAL:[^\]]+\]/g, '')
-        .replace(/\[XP:[^\]]+\]/g, '')
-        .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
-        .replace(/\[GOAL:[^\]]+\]/g, '')
-        .replace(/\[MOOD:[^\]]+\]/g, '')
-        // Nuovi comandi Quest System
-        .replace(/\[PROFILE:[^\]]+\]/g, '')
-        .replace(/\[AREA_OBJECTIVE:[^\]]+\]/g, '')
-        .replace(/\[ROUTINE_TASK:[^\]]+\]/g, '')
-        .replace(/\[ROUTINE_TEMPLATE:[^\]]+\]/g, '')
-        .replace(/\[QUEST_CHECK:[^\]]+\]/g, '')
-
+    // Rimuovi i TOOL calls dal testo (formato: [TOOL:nome]{json}[/TOOL])
+    let cleaned = cleanToolCalls(text)
+    
     // IMPORTANTE: NON fare trim() durante lo streaming per preservare gli spazi
     // Trim solo alla fine del messaggio completo
     return isFinal ? cleaned.trim() : cleaned
@@ -1020,52 +1002,21 @@ export async function POST(req: NextRequest) {
         }
 
         // 6. COSTRUISCI PROMPT
-        let systemPrompt: string
+        // PROMPT UNIFICATO - Usa sempre il nuovo sistema con TOOLS
+        const activeQuest = await getActiveQuest(userId)
+        console.log('[NUR] Generating unified prompt. Quest:', activeQuest?.title || 'none')
+        
+        let systemPrompt = await generateUnifiedPrompt(userId, activeQuest)
+        
+        // Aggiungi risultati web search se presenti
+        if (webSearchResults) {
+            systemPrompt += '
 
-        // DISCOVERY MODE: Prima conversazione - NUR deve conoscere l'utente
-        // IMPORTANTE: Discovery Mode usa SEMPRE il Discovery Prompt (con istruzioni comandi)
-        if (isDiscoveryMode) {
-            const activeQuest = await getActiveQuest(userId)
-            console.log(`[NUR] ✅ DISCOVERY MODE ACTIVE - Quest: ${activeQuest?.title || 'none'}`)
-            console.log(`[NUR] ✅ Using DISCOVERY PROMPT with commands [PROFILE:...] and [INSIGHT:...]`)
-            systemPrompt = await generateDiscoveryPrompt(userId, compactContext, discoveryState.insights, activeQuest)
-
-            // Se ha abbastanza insight, aggiungi suggerimento di proporre missione
-            if (discoveryState.readyForMission) {
-                systemPrompt += `\n\n## NOTA: Hai raccolto abbastanza insight! Puoi proporre la missione quando senti il momento giusto.`
-            }
-        } else if (useSonnet) {
-            const recentMsgs = recentHistory
-                .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
-                .join('\n')
-            systemPrompt = SONNET_PROMPT
-                .replace('{USER_CONTEXT}', compactContext)
-                .replace('{MISSION_PHASE}', missionPhase)
-                .replace('{MISSION_CONTEXT}', missionContext)
-                .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
-
-            // Aggiungi risultati web search se presenti
-            if (webSearchResults) {
-                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}`
-            }
-        } else {
-            // USA LA PERSONALITÀ COMPLETA DI NUR per Haiku!
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            systemPrompt = generateNurPrompt({
-                ...fullUserContext,
-                current_area: area
-            } as any)
-
-            // Aggiungi contesto missione e ultima azione
-            systemPrompt += `\n\n## MISSIONE ATTUALE\n${missionContext}\n\n${lastAction}`
-
-            // Aggiungi risultati web search se presenti
-            if (webSearchResults) {
-                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}\nUsa queste informazioni per rispondere all'utente.`
-            }
+## RISULTATI RICERCA WEB
+' + webSearchResults
         }
 
-        // 5. PREPARA MESSAGGI
+                // 5. PREPARA MESSAGGI
         let messages: Anthropic.MessageParam[]
 
         if (isNurStarting) {
@@ -1153,19 +1104,14 @@ export async function POST(req: NextRequest) {
 
                     // 7. ESEGUI AZIONI
                     // Esegui SEMPRE i comandi se presenti (sia Sonnet che Haiku)
-                    const hasCommands = fullResponse.includes('[PROFILE:') ||
-                                       fullResponse.includes('[INSIGHT:') ||
-                                       fullResponse.includes('[ACTION:')
+                    const hasToolCalls = fullResponse.includes('[TOOL:')
 
-                    if (hasCommands) {
-                        console.log(`[NUR ACTION] Found commands in response, executing... (Discovery: ${isDiscoveryMode})`)
-                        console.log(`[NUR ACTION] Response preview: ${fullResponse.substring(0, 200)}...`)
-                        await executeActions(fullResponse, userId)
-                    } else {
-                        console.log(`[NUR ACTION] No commands found in response (Discovery: ${isDiscoveryMode})`)
-                        if (isDiscoveryMode) {
-                            console.warn('[NUR WARNING] Discovery mode but no commands! User info may be lost.')
-                        }
+                    if (hasToolCalls) {
+                        console.log('[NUR TOOLS] Found tool calls, executing...')
+                        const toolCalls = parseToolCalls(fullResponse)
+                        console.log('[NUR TOOLS] Parsed:', toolCalls.length, 'tools')
+                        const results = await executeToolCalls(userId, toolCalls)
+                        console.log('[NUR TOOLS] Results:', results)
                     }
 
                     // 7b. CHECK QUEST COMPLETION
