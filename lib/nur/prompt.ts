@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase'
 // IL PROMPT PRINCIPALE
 // ============================================
 
-export const NUR_SYSTEM_PROMPT = \`# NUR - نور (Luce)
+export const NUR_SYSTEM_PROMPT = \`# NUR - Nur (Luce)
 
 ## CHI SONO
 Sono NUR. Il coach che trasforma la vita in un gioco RPG.
