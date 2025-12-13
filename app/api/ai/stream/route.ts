@@ -1010,10 +1010,7 @@ export async function POST(req: NextRequest) {
         
         // Aggiungi risultati web search se presenti
         if (webSearchResults) {
-            systemPrompt += '
-
-## RISULTATI RICERCA WEB
-' + webSearchResults
+            systemPrompt += "\n\n## RISULTATI RICERCA WEB\n" + webSearchResults
         }
 
                 // 5. PREPARA MESSAGGI
@@ -1170,4 +1167,4 @@ export async function POST(req: NextRequest) {
         })
     }
 }
-// Build fix
+
