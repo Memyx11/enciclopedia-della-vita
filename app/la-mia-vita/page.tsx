@@ -28,7 +28,7 @@ interface Quest {
     description: string
     xp_reward: number
     icon: string
-    status: "locked" | "in_progress" | "completed"
+    status: "locked" | "available" | "in_progress" | "completed"
     completed_at?: string
 }
 
@@ -162,8 +162,8 @@ export default function LaMiaVitaPage() {
 
                 setQuests(formattedQuests)
 
-                // Find active quest (first in_progress)
-                const active = formattedQuests.find(q => q.status === "in_progress")
+                // Find active quest (first in_progress or available)
+                const active = formattedQuests.find(q => q.status === "in_progress" || q.status === "available")
                 setActiveQuest(active || null)
                 
                 // Set current chapter
@@ -336,7 +336,7 @@ export default function LaMiaVitaPage() {
                             {chapterQuests.map(quest => (
                                 <div key={quest.id} className={"chapter-quest-item " + quest.status}>
                                     <div className="quest-status-icon">
-                                        {quest.status === "completed" ? "✓" : quest.status === "in_progress" ? "●" : "🔒"}
+                                        {quest.status === "completed" ? "✓" : quest.status === "in_progress" ? "●" : quest.status === "available" ? "○" : "🔒"}
                                     </div>
                                     <div className="quest-info">
                                         <span className="quest-name">{quest.icon} {quest.title}</span>
