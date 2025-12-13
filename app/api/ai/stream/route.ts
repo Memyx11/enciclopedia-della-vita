@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
         // 6. STREAMING
         const encoder = new TextEncoder()
         let fullResponse = ''
-        let pendingBuffer = ''
+        let toolBuffer = '' // Buffer per catturare tool tags incompleti
 
         const readable = new ReadableStream({
             async start(controller) {
@@ -229,36 +229,50 @@ export async function POST(req: NextRequest) {
                             const delta = event.delta as any
                             if (delta.type === 'text_delta' && delta.text) {
                                 fullResponse += delta.text
-                                pendingBuffer += delta.text
+                                toolBuffer += delta.text
 
-                                let textToSend = pendingBuffer
-                                const lastOpenBracket = textToSend.lastIndexOf('[')
-                                const lastCloseBracket = textToSend.lastIndexOf(']')
+                                // Rimuovi tool tags COMPLETI dal buffer
+                                let cleanedBuffer = toolBuffer.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, '')
 
-                                if (lastOpenBracket > lastCloseBracket) {
-                                    // C'è un comando aperto, tieni il buffer
-                                    textToSend = pendingBuffer.substring(0, lastOpenBracket)
-                                    pendingBuffer = pendingBuffer.substring(lastOpenBracket)
+                                // Controlla se c'è un tool tag INCOMPLETO (aperto ma non chiuso)
+                                const openToolMatch = cleanedBuffer.match(/\[TOOL:[^\]]*$/)
+                                const partialToolMatch = cleanedBuffer.match(/\[TOOL:\w+\][^[]*$/)
+
+                                if (openToolMatch) {
+                                    // C'è "[TOOL:..." non ancora chiuso - tieni nel buffer
+                                    const textToSend = cleanedBuffer.substring(0, openToolMatch.index)
+                                    toolBuffer = cleanedBuffer.substring(openToolMatch.index!)
+                                    if (textToSend) {
+                                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: textToSend })}\n\n`))
+                                    }
+                                } else if (partialToolMatch && !cleanedBuffer.includes('[/TOOL]')) {
+                                    // C'è "[TOOL:nome]..." senza [/TOOL] - tieni nel buffer
+                                    const idx = cleanedBuffer.lastIndexOf('[TOOL:')
+                                    if (idx >= 0) {
+                                        const textToSend = cleanedBuffer.substring(0, idx)
+                                        toolBuffer = cleanedBuffer.substring(idx)
+                                        if (textToSend) {
+                                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: textToSend })}\n\n`))
+                                        }
+                                    }
                                 } else {
-                                    pendingBuffer = ''
-                                }
-
-                                // Durante streaming: NON fare trim per preservare gli spazi
-                                const cleanText = cleanResponse(textToSend, false)
-                                if (cleanText) {
-                                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
+                                    // Nessun tool tag incompleto - invia tutto
+                                    toolBuffer = ''
+                                    if (cleanedBuffer) {
+                                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanedBuffer })}\n\n`))
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // IMPORTANTE: Svuota il buffer residuo alla fine dello streaming
-                    if (pendingBuffer) {
-                        const cleanText = cleanResponse(pendingBuffer, false)
+                    // Svuota buffer residuo (dopo aver rimosso eventuali tool tags)
+                    if (toolBuffer) {
+                        const cleanText = toolBuffer.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, '').trim()
                         if (cleanText) {
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                         }
-                        pendingBuffer = ''
+                        toolBuffer = ''
                     }
 
                     // Log costi

@@ -155,20 +155,42 @@ export function parseToolCalls(text: string): Array<{tool: string, params: any}>
 }
 
 export async function executeToolCalls(userId: string, toolCalls: Array<{tool: string, params: any}>): Promise<ToolResult[]> {
+  console.log('[TOOLS] Executing', toolCalls.length, 'tools for user', userId)
   const results: ToolResult[] = []
+
   for (const call of toolCalls) {
+    console.log('[TOOLS] Executing:', call.tool, JSON.stringify(call.params))
     let result: ToolResult
+
     switch (call.tool) {
-      case 'save_insight': result = await saveInsight(userId, call.params); break
-      case 'update_profile': result = await updateProfile(userId, call.params); break
-      case 'complete_quest': result = await completeQuest(userId, call.params); break
-      case 'award_xp': result = await awardXp(userId, call.params); break
-      case 'create_mission': result = await createMission(userId, call.params); break
-      case 'add_routine_task': result = await addRoutineTask(userId, call.params); break
-      default: result = { success: false, message: 'Tool sconosciuto: ' + call.tool }
+      case 'save_insight':
+        result = await saveInsight(userId, call.params)
+        break
+      case 'update_profile':
+        result = await updateProfile(userId, call.params)
+        break
+      case 'complete_quest':
+        console.log('[TOOLS] === COMPLETING QUEST ===', call.params.quest_id)
+        result = await completeQuest(userId, call.params)
+        console.log('[TOOLS] Quest completion result:', result.success, result.message)
+        break
+      case 'award_xp':
+        result = await awardXp(userId, call.params)
+        break
+      case 'create_mission':
+        result = await createMission(userId, call.params)
+        break
+      case 'add_routine_task':
+        result = await addRoutineTask(userId, call.params)
+        break
+      default:
+        result = { success: false, message: 'Tool sconosciuto: ' + call.tool }
     }
+
+    console.log('[TOOLS] Result:', call.tool, '->', result.success ? 'OK' : 'FAIL', result.message)
     results.push(result)
   }
+
   return results
 }
 
