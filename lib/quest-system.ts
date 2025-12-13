@@ -270,28 +270,38 @@ export async function checkAndCompleteQuest(
  */
 export async function checkAllQuests(userId: string): Promise<string[]> {
     try {
-        // Usa la funzione SQL migliorata che:
-        // 1. Auto-start delle quest available → in_progress
-        // 2. Controlla tutte le quest in_progress
-        // 3. Completa quelle che soddisfano i requisiti
+        // PRIMA: Assicurati che le quest siano inizializzate per questo utente
+        const { data: existing } = await supabase
+            .from('user_quest_progress')
+            .select('id')
+            .eq('clerk_user_id', userId)
+            .limit(1)
+        
+        if (!existing || existing.length === 0) {
+            console.log('[Quest] Initializing quests for new user:', userId)
+            await supabase.rpc('initialize_user_quests', { p_clerk_user_id: userId })
+        }
+
+        // POI: Usa la funzione SQL per check e complete
         const { data, error } = await supabase.rpc('check_and_complete_all_quests', {
             p_clerk_user_id: userId
         })
 
         if (error) {
             console.error('[Quest] Error checking quests:', error)
-            // Fallback al metodo manuale
             return await checkAllQuestsManual(userId)
         }
 
         const completedQuests = (data || []).map((q: any) => q.completed_quest_id)
         if (completedQuests.length > 0) {
-            console.log(`[Quest] Completed via SQL: ${completedQuests.join(', ')}`)
+            console.log('[Quest] Completed via SQL:', completedQuests.join(', '))
         }
+
         return completedQuests
     } catch (e) {
         console.error('[Quest] Exception:', e)
         return await checkAllQuestsManual(userId)
+    }
     }
 }
 
