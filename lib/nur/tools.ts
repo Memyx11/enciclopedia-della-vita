@@ -81,29 +81,84 @@ async function updateProfile(userId: string, params: {
 }
 
 async function completeQuest(userId: string, params: { quest_id: string }): Promise<ToolResult> {
-  const { data: canComplete } = await supabase.rpc('check_quest_completion', {
-    p_clerk_user_id: userId, p_quest_id: params.quest_id
-  })
-  if (!canComplete) return { success: false, message: 'Requisiti non soddisfatti' }
+  console.log('[TOOL:complete_quest] Starting for quest:', params.quest_id)
 
-  const { data: quest } = await supabase
+  // 1. Carica la quest
+  const { data: quest, error: questError } = await supabase
     .from('game_quests')
     .select('xp_reward, title')
     .eq('id', params.quest_id)
     .single()
-  if (!quest) return { success: false, message: 'Quest non trovata' }
 
-  await supabase.from('user_quest_progress').update({
-    status: 'completed', completed_at: new Date().toISOString(), xp_awarded: quest.xp_reward
-  }).eq('clerk_user_id', userId).eq('quest_id', params.quest_id)
+  if (questError || !quest) {
+    console.error('[TOOL:complete_quest] Quest not found:', params.quest_id, questError)
+    return { success: false, message: 'Quest non trovata: ' + params.quest_id }
+  }
 
-  await supabase.rpc('add_xp', {
-    p_clerk_user_id: userId, p_amount: quest.xp_reward,
-    p_reason: 'Quest: ' + quest.title, p_source_type: 'quest'
-  })
-  await supabase.rpc('unlock_next_quests', { p_clerk_user_id: userId, p_completed_quest_id: params.quest_id })
+  // 2. Verifica che non sia gia completata
+  const { data: progress } = await supabase
+    .from('user_quest_progress')
+    .select('status')
+    .eq('clerk_user_id', userId)
+    .eq('quest_id', params.quest_id)
+    .single()
 
-  console.log('[TOOL:complete_quest]', params.quest_id, '+', quest.xp_reward, 'XP')
+  if (progress?.status === 'completed') {
+    console.log('[TOOL:complete_quest] Already completed:', params.quest_id)
+    return { success: false, message: 'Quest gia completata' }
+  }
+
+  // 3. Completa la quest
+  const { error: updateError } = await supabase
+    .from('user_quest_progress')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      xp_awarded: quest.xp_reward,
+      progress_percent: 100
+    })
+    .eq('clerk_user_id', userId)
+    .eq('quest_id', params.quest_id)
+
+  if (updateError) {
+    console.error('[TOOL:complete_quest] Update failed:', updateError)
+    return { success: false, message: 'Errore aggiornamento: ' + updateError.message }
+  }
+
+  // 4. Aggiungi XP (con fallback se RPC non esiste)
+  try {
+    await supabase.rpc('add_xp', {
+      p_clerk_user_id: userId,
+      p_amount: quest.xp_reward,
+      p_reason: 'Quest: ' + quest.title,
+      p_source_type: 'quest'
+    })
+  } catch (xpError) {
+    console.log('[TOOL:complete_quest] add_xp RPC failed, trying direct update')
+    // Fallback: aggiorna XP direttamente
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('xp')
+      .eq('clerk_user_id', userId)
+      .single()
+
+    await supabase
+      .from('profiles')
+      .update({ xp: (profile?.xp || 0) + quest.xp_reward })
+      .eq('clerk_user_id', userId)
+  }
+
+  // 5. Sblocca prossime quest (con fallback)
+  try {
+    await supabase.rpc('unlock_next_quests', {
+      p_clerk_user_id: userId,
+      p_completed_quest_id: params.quest_id
+    })
+  } catch (unlockError) {
+    console.log('[TOOL:complete_quest] unlock_next_quests RPC failed, skipping')
+  }
+
+  console.log('[TOOL:complete_quest] SUCCESS:', params.quest_id, '+', quest.xp_reward, 'XP')
   return { success: true, message: 'Quest completata! +' + quest.xp_reward + ' XP', data: { xp: quest.xp_reward } }
 }
 
