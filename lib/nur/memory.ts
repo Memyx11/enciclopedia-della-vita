@@ -5,7 +5,26 @@
 
 import { supabase } from '@/lib/supabase'
 import Anthropic from '@anthropic-ai/sdk'
-import { INSIGHT_EXTRACTION_PROMPT } from './personality'
+
+// Prompt per l'estrazione di insight dai messaggi
+const INSIGHT_EXTRACTION_PROMPT = `Sei un sistema di analisi. Estrai insight dal messaggio.
+
+Rispondi SOLO con un array JSON valido:
+[
+  {
+    "type": "fact|preference|goal|struggle|achievement|pattern|emotion|relationship|trigger|value",
+    "content": "insight breve e chiaro",
+    "area": "salute|soldi|relazioni|lavoro|hobby|crescita|casa|sociale|spirituale|futuro|null",
+    "importance": 1-10,
+    "confidence": 1-10
+  }
+]
+
+Regole:
+- Solo insight significativi (importance >= 5)
+- Massimo 3 insight per messaggio
+- Se non c e nulla di significativo: []
+- Content in italiano, breve e diretto`
 
 // ============================================
 // TYPES
@@ -75,6 +94,29 @@ export interface ExtractedInsight {
     area?: AreaType
     importance: number
     confidence: number
+}
+
+// Legacy UserContext interface for compatibility
+export interface UserContext {
+    profile?: {
+        full_name?: string
+        age_range?: string
+        communication_style?: string
+    }
+    life_areas?: Array<{
+        area_type: string
+        progress: number
+        priority: number
+        current_state?: string
+        goal_state?: string
+    }>
+    recent_memories?: Array<{
+        memory_type: string
+        content: string
+        importance: number
+        area_related?: string
+    }>
+    current_area?: string
 }
 
 // ============================================

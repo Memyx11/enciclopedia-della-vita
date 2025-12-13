@@ -4,19 +4,19 @@
  */
 
 // Re-export everything
-export * from './personality'
+export * from './prompt'
 export * from './memory'
 export * from './journal'
-export * from './mission'
 
 // Main NUR interface
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
-import { generateNurPrompt, UserContext } from './personality'
+import { generateNurPrompt } from './prompt'
 import {
     buildFullUserContext,
     extractInsightsFromMessage,
     updateNurGrowthMetric,
+    UserContext,
     saveUserMemory
 } from './memory'
 import { createInsightEntry, createAchievementEntry } from './journal'
@@ -74,14 +74,8 @@ class NurCore {
         } = options
 
         try {
-            // 1. Carica contesto completo dell'utente
-            const userContext = await buildFullUserContext(clerkUserId)
-
-            // 2. Genera il system prompt personalizzato
-            const systemPrompt = generateNurPrompt({
-                ...userContext,
-                current_area: areaContext
-            })
+            // 1. Genera il system prompt personalizzato
+            const systemPrompt = await generateNurPrompt(clerkUserId, null)
 
             // 3. Prepara i messaggi per Claude
             const messages = [
@@ -152,7 +146,7 @@ class NurCore {
             const metadata = await this.analyzeResponse(message, nurMessage)
 
             // 9. Se NUR ha proposto una soluzione, salvala
-            if (metadata.contains_solution) {
+            if (metadata?.contains_solution) {
                 await this.extractAndSaveSolution(
                     clerkUserId,
                     nurMessage,
@@ -237,7 +231,7 @@ class NurCore {
             console.log('Message count update skipped')
         }
 
-        return conversationId
+        return conversationId!
     }
 
     /**
@@ -345,7 +339,7 @@ class NurCore {
     /**
      * Ottiene il contesto utente formattato
      */
-    async getUserContext(clerkUserId: string): Promise<UserContext> {
+    async getUserContext(clerkUserId: string): Promise<any> {
         return await buildFullUserContext(clerkUserId)
     }
 
