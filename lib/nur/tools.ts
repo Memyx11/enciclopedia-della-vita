@@ -125,37 +125,73 @@ async function completeQuest(userId: string, params: { quest_id: string }): Prom
     return { success: false, message: 'Errore aggiornamento: ' + updateError.message }
   }
 
-  // 4. Aggiungi XP (con fallback se RPC non esiste)
-  try {
-    await supabase.rpc('add_xp', {
-      p_clerk_user_id: userId,
-      p_amount: quest.xp_reward,
-      p_reason: 'Quest: ' + quest.title,
-      p_source_type: 'quest'
-    })
-  } catch (xpError) {
-    console.log('[TOOL:complete_quest] add_xp RPC failed, trying direct update')
+  // 4. Aggiungi XP - usa RPC con parametri corretti, fallback se errore
+  const { data: xpResult, error: xpError } = await supabase.rpc('add_xp', {
+    p_clerk_user_id: userId,
+    p_amount: quest.xp_reward,
+    p_reason: 'Quest: ' + quest.title,
+    p_objective_id: null
+  })
+
+  if (xpError) {
+    console.log('[TOOL:complete_quest] add_xp RPC failed:', xpError.message)
     // Fallback: aggiorna XP direttamente
     const { data: profile } = await supabase
       .from('profiles')
-      .select('xp')
+      .select('xp, level, xp_to_next_level')
       .eq('clerk_user_id', userId)
       .single()
 
+    const newXp = (profile?.xp || 0) + quest.xp_reward
+    let newLevel = profile?.level || 1
+    let xpForLevel = profile?.xp_to_next_level || 100
+    let remainingXp = newXp
+
+    // Check level up
+    while (remainingXp >= xpForLevel) {
+      remainingXp -= xpForLevel
+      newLevel++
+      xpForLevel = Math.floor(100 * Math.pow(newLevel, 1.5))
+    }
+
     await supabase
       .from('profiles')
-      .update({ xp: (profile?.xp || 0) + quest.xp_reward })
+      .update({
+        xp: remainingXp,
+        level: newLevel,
+        xp_to_next_level: xpForLevel
+      })
       .eq('clerk_user_id', userId)
+
+    console.log('[TOOL:complete_quest] Fallback XP update: +', quest.xp_reward, 'XP, level:', newLevel)
+  } else {
+    console.log('[TOOL:complete_quest] XP added via RPC:', xpResult)
   }
 
-  // 5. Sblocca prossime quest (con fallback)
-  try {
-    await supabase.rpc('unlock_next_quests', {
-      p_clerk_user_id: userId,
-      p_completed_quest_id: params.quest_id
-    })
-  } catch (unlockError) {
-    console.log('[TOOL:complete_quest] unlock_next_quests RPC failed, skipping')
+  // 5. Sblocca prossime quest
+  const { error: unlockError } = await supabase.rpc('unlock_next_quests', {
+    p_clerk_user_id: userId,
+    p_completed_quest_id: params.quest_id
+  })
+
+  if (unlockError) {
+    console.log('[TOOL:complete_quest] unlock_next_quests failed:', unlockError.message)
+    // Fallback: sblocca manualmente la prossima quest
+    const { data: nextQuest } = await supabase
+      .from('game_quests')
+      .select('id')
+      .eq('unlock_after', params.quest_id)
+      .single()
+
+    if (nextQuest) {
+      await supabase
+        .from('user_quest_progress')
+        .update({ status: 'available' })
+        .eq('clerk_user_id', userId)
+        .eq('quest_id', nextQuest.id)
+        .eq('status', 'locked')
+      console.log('[TOOL:complete_quest] Manually unlocked:', nextQuest.id)
+    }
   }
 
   console.log('[TOOL:complete_quest] SUCCESS:', params.quest_id, '+', quest.xp_reward, 'XP')
@@ -164,9 +200,25 @@ async function completeQuest(userId: string, params: { quest_id: string }): Prom
 
 async function awardXp(userId: string, params: { amount: number, reason: string }): Promise<ToolResult> {
   const { error } = await supabase.rpc('add_xp', {
-    p_clerk_user_id: userId, p_amount: params.amount, p_reason: params.reason, p_source_type: 'bonus'
+    p_clerk_user_id: userId,
+    p_amount: params.amount,
+    p_reason: params.reason,
+    p_objective_id: null
   })
-  if (error) return { success: false, message: error.message }
+  if (error) {
+    console.log('[TOOL:award_xp] RPC failed, using fallback:', error.message)
+    // Fallback diretto
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('xp')
+      .eq('clerk_user_id', userId)
+      .single()
+
+    await supabase
+      .from('profiles')
+      .update({ xp: (profile?.xp || 0) + params.amount })
+      .eq('clerk_user_id', userId)
+  }
   return { success: true, message: '+' + params.amount + ' XP' }
 }
 
