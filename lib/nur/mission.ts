@@ -134,13 +134,13 @@ export function getDisplayState(
  * Carica lo stato completo della dashboard per un utente
  */
 export async function getDashboardState(userId: string): Promise<DashboardState> {
-    // Carica missione
+    // Carica missione (maybeSingle perché potrebbe non esistere)
     const { data: mission } = await supabase
         .from('user_mission')
         .select('*')
         .eq('clerk_user_id', userId)
         .eq('status', 'active')
-        .single()
+        .maybeSingle()
 
     // Se non c'è missione, stato vuoto
     if (!mission) {

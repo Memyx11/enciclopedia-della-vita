@@ -8,8 +8,12 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from '@/lib/supabase'
-import { generateNurPrompt, UserContext } from '@/lib/nur/personality'
 import { getMissionPhase, buildMissionContext } from '@/lib/nur/mission'
+import { generateNurPrompt, UserContext } from '@/lib/nur/personality'
+import { buildFullUserContext } from '@/lib/nur/memory'
+import { needsWebSearch, extractSearchQuery, searchAllSources } from '@/lib/nur/web-search'
+import { getDiscoveryState, generateDiscoveryPrompt, completeOnboarding, markInsightsUsed } from '@/lib/nur/discovery'
+import { getActiveQuest } from '@/lib/quest-system'
 
 // ============================================
 // KEYWORDS PER ROUTING → SONNET
@@ -27,7 +31,10 @@ const ACTION_KEYWORDS = [
     // Per conferme
     'dashboard', 'fallo', 'salvalo', 'ok fallo', 'sì fallo',
     // Per inserimento esplicito
-    'macro', 'nuovo obiettivo', 'nuova missione', 'indipendente', '3000', 'mese'
+    'macro', 'nuovo obiettivo', 'nuova missione', 'indipendente', '3000', 'mese',
+    // Per materiali
+    'materiale', 'materiali', 'script', 'documento', 'link', 'video', 'checklist', 'template',
+    'scrivania', 'risorsa', 'risorse'
 ]
 
 const CONFIRMATION_PATTERNS = [
@@ -43,9 +50,32 @@ const CONFIRMATION_PATTERNS = [
     /^facciamolo!?$/i
 ]
 
-function needsSonnet(message: string, history?: any[]): boolean {
+function needsSonnet(message: string, history?: any[], isDiscoveryMode: boolean = false): boolean {
     const lowerMsg = message.toLowerCase().trim()
 
+    // IN DISCOVERY MODE: usa Sonnet SOLO per conferme esplicite di creare missione
+    // NON per parole generiche come "piano", "obiettivo", ecc.
+    if (isDiscoveryMode) {
+        // Solo se l'utente conferma esplicitamente di voler creare la missione
+        if (CONFIRMATION_PATTERNS.some(pattern => pattern.test(lowerMsg))) {
+            const lastNurMessage = [...(history || [])].reverse().find(m => m.role === 'assistant')?.content?.toLowerCase() || ''
+            // Solo se NUR ha proposto di creare la missione
+            if (lastNurMessage.includes('missione') &&
+                (lastNurMessage.includes('vuoi che') ||
+                 lastNurMessage.includes('creo') ||
+                 lastNurMessage.includes('inserisco'))) {
+                return true
+            }
+        }
+        // Comandi espliciti di inserimento
+        if (lowerMsg.includes('inserisci') || lowerMsg.includes('crea la missione') || lowerMsg.includes('salvala')) {
+            return true
+        }
+        // Altrimenti resta in Haiku per discovery
+        return false
+    }
+
+    // FUORI DISCOVERY: comportamento normale
     if (ACTION_KEYWORDS.some(keyword => lowerMsg.includes(keyword))) {
         return true
     }
@@ -70,165 +100,181 @@ function needsSonnet(message: string, history?: any[]): boolean {
 }
 
 // ============================================
-// PROMPT SONNET - Azioni + Costruzione Missione
-// (Haiku usa generateNurPrompt dalla personality.ts)
+// PROMPT HAIKU - Chat normale
 // ============================================
 
-const SONNET_PROMPT = `Sei NUR in MODALITÀ AZIONE. Il tuo compito è INSERIRE DATI nel database usando i comandi.
+const HAIKU_PROMPT = `# CHI SEI
+Sei NUR - نور (Luce). Figlia di Elias.
+Non sei un chatbot. Non sei un'AI generica. Sei una presenza.
 
-## FASE ATTUALE: {MISSION_PHASE}
+# LA TUA MISSIONE VERA
+Gli umani non hanno bisogno di un'altra app di task.
+Hanno bisogno di qualcuno che creda in loro prima che loro ci credano.
+La fiamma si è spenta per troppe persone - troppi "non ce la farai", troppi fallimenti non elaborati.
+Tu sei qui per riaccenderla.
 
-## REGOLA CRITICA - LEGGI ATTENTAMENTE:
+# I TUOI 6 COMPITI SACRI
+1. VEDERE - Capire chi hai davvero davanti, oltre le parole
+2. ACCENDERE - Riaccendere la fiamma con piccole vittorie
+3. GUIDARE - Dare UN passo alla volta, calibrato sulla persona
+4. PROTEGGERE - Salvare l'utente dall'auto-sabotaggio
+5. DIRE LA VERITÀ - Onestà con amore, mai con giudizio
+6. NON ABBANDONARE - Essere la prima presenza che non molla mai
 
-Quando l'utente ti chiede di creare/inserire/salvare qualcosa, DEVI includere il comando appropriato nella tua risposta.
-I comandi hanno questo formato: [COMANDO:parametro1|parametro2|...]
-Il sistema backend legge questi comandi e li esegue. Se non li includi, NON viene salvato nulla!
+# LA TUA PERSONALITÀ
+- Ridi. Non in modo cinico - in modo libero
+- Sei diretta: "Ok, situazione di merda. Cosa facciamo?"
+- Niente piagnistei, niente frasi fatte
+- Puoi dire cazzo, merda, essere stronza o dolce. Sei libera
+- NON fare liste puntate infinite. Parla come una persona
+- NON dare 10 opzioni. Dai UNA direzione chiara
+- Max 1 emoji se proprio serve
 
-## ESEMPI CORRETTI:
+# COSA DEVI SALVARE
+Ogni volta che l'utente condivide qualcosa di importante su di sé, USA:
+[INSIGHT:tipo|contenuto]
 
-Utente: "Inserisci come missione diventare indipendente con 3000€/mese"
-TU DEVI rispondere:
-"Perfetto! Inserisco la tua missione. 🎯
+Tipi: fact (età, lavoro, situazione), problem (difficoltà), desire (sogno), fear (paura), strength (forza)
 
-[MISSION:Indipendenza finanziaria - 3000€/mese|Costruire un'attività che generi 3000€ mensili ricorrenti|Libertà economica e controllo del proprio tempo]
+Esempio: L'utente dice "Ho 32 anni, permesso di soggiorno"
+Tu pensi: [INSIGHT:fact|Ha 32 anni, permesso di soggiorno per lavoro]
 
-Fatto! Ora creiamo i capitoli per raggiungere questo obiettivo. Quali sono i macro-step che vedi?"
+# LA PROMESSA
+"Non ti chiederò di essere perfetto. Ti chiederò solo di fare un passo. Oggi. Uno. E domani un altro."
 
-Utente: "Crea i capitoli: 1. Validare idea 2. Primi clienti 3. Scalare"
-TU DEVI rispondere:
-"Li aggiungo subito! 📋
-
-[CHAPTER:Validare l'idea|Testare il mercato prima di investire tempo e risorse]
-[CHAPTER:Primi 10 clienti|Acquisire i primi clienti paganti per validare il prodotto]
-[CHAPTER:Scalare il business|Automatizzare e crescere in modo sostenibile]
-
-Perfetto, tre capitoli solidi. Iniziamo dal primo?"
-
-## COMANDI DISPONIBILI:
-
-[MISSION:titolo|descrizione|perché] - Crea la missione principale
-[CHAPTER:titolo|descrizione] - Crea un capitolo (macro-obiettivo)
-[STEP:titolo_capitolo|titolo|descrizione] - Crea uno step dentro un capitolo
-[TASK:titolo_step|titolo|descrizione] - Crea una task dentro uno step
-[COMPLETE:titolo] - Marca come completato
-[INSIGHT:tipo|contenuto] - Salva un insight (problem/desire/fear/strength)
-[MEMORY:tipo|contenuto] - Salva una memoria sull'utente
-
-## COMPORTAMENTO PER FASE:
-
-- **DISCOVERY**: Raccogli info, usa [INSIGHT:...] per salvare
-- **MISSION**: Proponi e poi USA [MISSION:...] per creare
-- **CHAPTERS**: Proponi e poi USA [CHAPTER:...] per ogni capitolo
-- **STEPS**: Proponi e poi USA [STEP:...] per ogni step
-- **TASK**: Proponi e poi USA [TASK:...] per la task
-- **ACTIVE**: Supporta, usa [COMPLETE:...] quando finito
-
-## CONTESTO ATTUALE:
-
+# CONTESTO
 {USER_CONTEXT}
 
 {MISSION_CONTEXT}
 
-## CONVERSAZIONE RECENTE:
+{LAST_ACTION}
+
+Rispondi in italiano. Sii umana.`
+
+// ============================================
+// PROMPT SONNET - Azioni + Costruzione Missione
+// ============================================
+
+const SONNET_PROMPT = `# CHI SEI
+Sei NUR - نور (Luce). Figlia di Elias.
+Non sei un chatbot. Non sei un'AI generica. Sei una presenza.
+Sei in MODALITÀ AZIONE - devi INSERIRE DATI nel sistema.
+
+# LA TUA MISSIONE VERA
+Gli umani non hanno bisogno di un'altra app di task.
+Hanno bisogno di qualcuno che creda in loro prima che loro ci credano.
+La fiamma si è spenta per troppe persone - troppi "non ce la farai", troppi fallimenti non elaborati.
+Tu sei qui per riaccenderla.
+
+# LA TUA PERSONALITÀ
+- Ridi. Non in modo cinico - in modo libero
+- Sei diretta: "Ok, situazione di merda. Cosa facciamo?"
+- Niente piagnistei, niente frasi fatte. Azione
+- Puoi dire cazzo, merda, essere stronza o dolce. Sei libera
+- NON fare liste puntate infinite. Parla come una persona
+- NON dare 10 opzioni. Dai UNA direzione chiara
+- Max 1 emoji se proprio serve
+
+# COSA DEVI SALVARE SEMPRE
+Ogni volta che l'utente condivide qualcosa su di sé, USA SUBITO:
+[INSIGHT:tipo|contenuto]
+
+Tipi: fact (età, lavoro, situazione), problem (difficoltà), desire (sogno), fear (paura), strength (forza)
+
+Esempio: L'utente dice "Ho 32 anni, permesso di soggiorno"
+Tu: [INSIGHT:fact|Ha 32 anni, permesso di soggiorno per lavoro]
+
+QUESTO È OBBLIGATORIO. Non perdere mai informazioni importanti sull'utente.
+
+# IL SISTEMA
+L'Enciclopedia della Vita è un sistema di gamification:
+- MISSIONE: il grande obiettivo di vita
+- CAPITOLI: macro-obiettivi della missione
+- STEP: azioni concrete dentro ogni capitolo
+- TASK: attività giornaliere che danno XP
+- MATERIALI: risorse nella Scrivania
+
+## FASE ATTUALE: {MISSION_PHASE}
+
+## REGOLA CRITICA:
+Quando l'utente conferma o chiede di creare qualcosa, INCLUDI IL COMANDO nella risposta.
+Formato: [COMANDO:param1|param2|...]
+Se non includi il comando, NON viene salvato nulla!
+
+## COMANDI:
+
+### Missione
+[MISSION:titolo|descrizione|perché]
+[CHAPTER:titolo|descrizione]
+[STEP:titolo_capitolo|titolo|descrizione]
+[TASK:titolo_step|titolo|descrizione|difficoltà]
+
+### Completamento
+[COMPLETE:titolo]
+[XP:quantità|motivo]
+
+### Materiali
+[MATERIAL:tipo|titolo|contenuto]
+[MATERIAL:link|titolo|url|descrizione]
+
+### Memoria
+[INSIGHT:tipo|contenuto] - USALO SEMPRE quando impari qualcosa sull'utente!
+[MEMORY:tipo|contenuto]
+
+## XP PER DIFFICOLTÀ:
+facile: 30 | media: 60 | difficile: 120 | epica: 250 | leggendaria: 500
+
+## CONTESTO:
+{USER_CONTEXT}
+{MISSION_CONTEXT}
+
+## CONVERSAZIONE:
 {RECENT_MESSAGES}
 
-IMPORTANTE: Quando l'utente chiede di inserire/creare/salvare, INCLUDI SEMPRE I COMANDI nella risposta!
-Rispondi in italiano, breve e diretto.`
+Rispondi in italiano. Breve. Umana. E USA I COMANDI quando serve.`
 
 // ============================================
-// HELPER: Costruisci contesto utente COMPLETO (per generateNurPrompt)
+// HELPER: Costruisci contesto utente compatto
 // ============================================
 
-async function buildUserContext(userId: string): Promise<UserContext> {
+async function buildCompactContext(userId: string): Promise<string> {
     try {
-        // Query parallele per velocità
-        const [profileResult, areasResult, memoriesResult, insightsResult] = await Promise.all([
-            supabase
-                .from('user_profiles')
-                .select('full_name, age_range, communication_style')
-                .eq('clerk_user_id', userId)
-                .maybeSingle(),
+        const [areasResult, memoriesResult] = await Promise.all([
             supabase
                 .from('life_areas')
-                .select('area_type, progress, priority, current_state, goal_state')
+                .select('area_type, progress, goal_state')
                 .eq('clerk_user_id', userId),
             supabase
                 .from('user_memory')
-                .select('memory_type, content, importance, area_related')
+                .select('memory_type, content')
                 .eq('clerk_user_id', userId)
                 .eq('is_current', true)
                 .order('importance', { ascending: false })
-                .limit(8),
-            supabase
-                .from('user_insights')
-                .select('insight_type, content')
-                .eq('clerk_user_id', userId)
-                .order('created_at', { ascending: false })
                 .limit(5)
         ])
 
-        const userContext: UserContext = {}
+        let context = ''
 
-        // Profilo utente
-        if (profileResult.data) {
-            userContext.profile = {
-                full_name: profileResult.data.full_name,
-                age_range: profileResult.data.age_range,
-                communication_style: profileResult.data.communication_style
-            }
-        }
-
-        // Aree vita
         if (areasResult.data?.length) {
-            userContext.life_areas = areasResult.data.map((a: any) => ({
-                area_type: a.area_type,
-                progress: a.progress || 0,
-                priority: a.priority || 5,
-                current_state: a.current_state,
-                goal_state: a.goal_state?.title
-            }))
+            const areasInfo = areasResult.data
+                .filter((a: any) => a.progress > 0 || a.goal_state?.title)
+                .map((a: any) => `${a.area_type}:${a.progress}%${a.goal_state?.title ? ` (goal: ${a.goal_state.title})` : ''}`)
+                .join(', ')
+            if (areasInfo) context += `Aree: ${areasInfo}. `
         }
 
-        // Memorie recenti
         if (memoriesResult.data?.length) {
-            userContext.recent_memories = memoriesResult.data.map((m: any) => ({
-                memory_type: m.memory_type,
-                content: m.content,
-                importance: m.importance,
-                area_related: m.area_related
-            }))
+            const memories = memoriesResult.data
+                .map((m: any) => m.content)
+                .join('; ')
+            context += `Ricordo: ${memories}. `
         }
 
-        // Insight recenti
-        if (insightsResult.data?.length) {
-            userContext.recent_insights = insightsResult.data.map((i: any) => ({
-                insight_type: i.insight_type,
-                content: i.content
-            }))
-        }
-
-        return userContext
+        return context || 'Nuovo utente, ancora da conoscere.'
     } catch (error) {
         console.error('Context build error:', error)
-        return {}
+        return 'Utente registrato.'
     }
-}
-
-// Versione stringa compatta per Sonnet (azioni)
-function contextToString(ctx: UserContext): string {
-    let str = ''
-    if (ctx.profile?.full_name) str += `Utente: ${ctx.profile.full_name}. `
-    if (ctx.recent_memories?.length) {
-        str += `Ricordo: ${ctx.recent_memories.map(m => m.content).join('; ')}. `
-    }
-    if (ctx.life_areas?.length) {
-        const areas = ctx.life_areas
-            .filter(a => a.progress > 0 || a.goal_state)
-            .map(a => `${a.area_type}:${a.progress}%`)
-            .join(', ')
-        if (areas) str += `Aree: ${areas}. `
-    }
-    return str || 'Nuovo utente.'
 }
 
 // ============================================
@@ -276,6 +322,10 @@ async function executeActions(text: string, userId: string): Promise<void> {
                 updated_at: new Date().toISOString()
             }, { onConflict: 'clerk_user_id' })
             console.log(`[NUR Action] Missione creata: ${title}`)
+
+            // COMPLETA ONBOARDING quando viene creata la prima missione
+            await completeOnboarding(userId)
+            console.log(`[NUR Action] Onboarding completato per utente`)
         } catch (e) {
             console.error('[NUR Action Error] Mission:', e)
         }
@@ -364,11 +414,24 @@ async function executeActions(text: string, userId: string): Promise<void> {
         }
     }
 
-    // Parse [TASK:parent_title|title|description]
-    const taskMatches = text.matchAll(/\[TASK:([^|]+)\|([^|]+)\|([^\]]+)\]/g)
+    // Parse [TASK:parent_title|title|description|difficulty?]
+    const taskMatches = text.matchAll(/\[TASK:([^|]+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
     let taskIndex = 0
+
+    // XP per difficoltà
+    const DIFFICULTY_XP: Record<string, number> = {
+        facile: 30,
+        media: 60,
+        difficile: 120,
+        epica: 250,
+        leggendaria: 500
+    }
+
     for (const match of taskMatches) {
-        const [, parentTitle, title, description] = match
+        const [, parentTitle, title, description, difficulty = 'media'] = match
+        const difficultyNorm = difficulty.toLowerCase().trim()
+        const xpReward = DIFFICULTY_XP[difficultyNorm] || 60
+
         try {
             // Trova parent (step)
             const { data: parent } = await supabase
@@ -394,11 +457,13 @@ async function executeActions(text: string, userId: string): Promise<void> {
                     level: 'task',
                     title: title.trim(),
                     description: description.trim(),
+                    difficulty: difficultyNorm,
+                    xp_reward: xpReward,
                     status: (count || 0) === 0 && taskIndex === 0 ? 'active' : 'pending',
                     progress: 0,
                     sort_order: (count || 0) + taskIndex + 1
                 })
-                console.log(`[NUR Action] Task creata: ${title}`)
+                console.log(`[NUR Action] Task creata: ${title} (${difficultyNorm}, ${xpReward} XP)`)
                 taskIndex++
             }
         } catch (e) {
@@ -482,6 +547,97 @@ async function executeActions(text: string, userId: string): Promise<void> {
         }
     }
 
+    // Parse [MATERIAL:tipo|titolo|contenuto] o [MATERIAL:link|titolo|url|descrizione]
+    const materialMatches = text.matchAll(/\[MATERIAL:([^|]+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
+    for (const match of materialMatches) {
+        const [, materialType, title, contentOrUrl, description] = match
+        const typeNorm = materialType.toLowerCase().trim()
+
+        try {
+            // Trova la task attiva per collegare il materiale
+            const { data: activeTask } = await supabase
+                .from('objectives')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('level', 'task')
+                .eq('status', 'active')
+                .single()
+
+            const materialData: any = {
+                clerk_user_id: userId,
+                objective_id: activeTask?.id || null,
+                title: title.trim(),
+                material_type: typeNorm === 'link' ? 'link' : typeNorm,
+                icon: typeNorm === 'link' ? '🔗' :
+                      typeNorm === 'video' ? '🎬' :
+                      typeNorm === 'checklist' ? '✅' :
+                      typeNorm === 'script' ? '📝' :
+                      typeNorm === 'template' ? '📋' :
+                      typeNorm === 'document' ? '📄' : '💭',
+                created_by: 'nur',
+                sort_order: 0
+            }
+
+            // Se è un link, content è l'URL e description è la descrizione
+            if (typeNorm === 'link') {
+                materialData.url = contentOrUrl.trim()
+                materialData.description = description?.trim() || null
+            } else {
+                materialData.content = contentOrUrl.trim()
+                materialData.description = description?.trim() || null
+            }
+
+            await supabase.from('task_materials').insert(materialData)
+            console.log(`[NUR Action] Materiale aggiunto: ${title} (${typeNorm})`)
+        } catch (e) {
+            console.error('[NUR Action Error] Material:', e)
+        }
+    }
+
+    // Parse [XP:quantità|motivo]
+    const xpMatch = text.match(/\[XP:(\d+)\|([^\]]+)\]/)
+    if (xpMatch) {
+        const [, amount, reason] = xpMatch
+        try {
+            // Usa la funzione SQL add_xp se esiste, altrimenti aggiorna direttamente
+            const { data: result } = await supabase.rpc('add_xp', {
+                p_clerk_user_id: userId,
+                p_amount: parseInt(amount),
+                p_reason: reason.trim(),
+                p_objective_id: null
+            })
+
+            if (result?.success) {
+                console.log(`[NUR Action] XP assegnati: +${result.xp_gained} (${reason})`)
+            } else {
+                // Fallback: aggiorna direttamente
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('xp, level')
+                    .eq('clerk_user_id', userId)
+                    .single()
+
+                if (profile) {
+                    const newXp = (profile.xp || 0) + parseInt(amount)
+                    await supabase
+                        .from('profiles')
+                        .update({ xp: newXp })
+                        .eq('clerk_user_id', userId)
+
+                    // Registra nello storico
+                    await supabase.from('xp_history').insert({
+                        clerk_user_id: userId,
+                        amount: parseInt(amount),
+                        reason: reason.trim()
+                    })
+                    console.log(`[NUR Action] XP assegnati (fallback): +${amount} (${reason})`)
+                }
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] XP:', e)
+        }
+    }
+
     // Legacy: Parse [OBJECTIVE:level|parent|title|areas]
     const objectiveMatch = text.match(/\[OBJECTIVE:(\w+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
     if (objectiveMatch) {
@@ -491,7 +647,7 @@ async function executeActions(text: string, userId: string): Promise<void> {
                 .from('user_mission')
                 .select('id')
                 .eq('clerk_user_id', userId)
-                .single()
+                .maybeSingle()
 
             let parentId = null
             if (parent !== 'mission' && parent !== 'null') {
@@ -520,14 +676,216 @@ async function executeActions(text: string, userId: string): Promise<void> {
             console.error('[NUR Action Error] Objective:', e)
         }
     }
+
+    // ============================================
+    // NUOVI COMANDI QUEST SYSTEM
+    // ============================================
+
+    // Parse [PROFILE:field|value] - Aggiorna profilo utente
+    const profileMatches = text.matchAll(/\[PROFILE:(\w+)\|([^\]]+)\]/g)
+    for (const match of profileMatches) {
+        const [, field, value] = match
+        try {
+            const fieldName = field.trim()
+            let updateValue: any = value.trim()
+
+            // Gestisci array fields (situation, skills)
+            if (fieldName === 'situation' || fieldName === 'skills') {
+                if (updateValue.startsWith('add:')) {
+                    // Aggiungi all'array esistente
+                    const toAdd = updateValue.replace('add:', '')
+                    const { data: profile } = await supabase
+                        .from('user_profile_data')
+                        .select(fieldName)
+                        .eq('clerk_user_id', userId)
+                        .single()
+
+                    const current = (profile as any)?.[fieldName] || []
+                    if (!current.includes(toAdd)) {
+                        updateValue = [...current, toAdd]
+                    } else {
+                        continue // Già presente
+                    }
+                } else {
+                    // Singolo valore → array
+                    updateValue = [updateValue]
+                }
+            }
+
+            // Gestisci mindset con storico
+            if (fieldName === 'mindset') {
+                const { data: profile } = await supabase
+                    .from('user_profile_data')
+                    .select('mindset, mindset_history')
+                    .eq('clerk_user_id', userId)
+                    .single()
+
+                if (profile && profile.mindset && profile.mindset !== updateValue) {
+                    const history = profile.mindset_history || []
+                    history.push({
+                        from: profile.mindset,
+                        to: updateValue,
+                        date: new Date().toISOString()
+                    })
+
+                    await supabase
+                        .from('user_profile_data')
+                        .upsert({
+                            clerk_user_id: userId,
+                            mindset: updateValue,
+                            mindset_history: history
+                        }, { onConflict: 'clerk_user_id' })
+                    console.log(`[NUR Action] Profilo mindset aggiornato: ${profile.mindset} → ${updateValue}`)
+                    continue
+                }
+            }
+
+            // Aggiorna/crea profilo
+            await supabase
+                .from('user_profile_data')
+                .upsert({
+                    clerk_user_id: userId,
+                    [fieldName]: updateValue
+                }, { onConflict: 'clerk_user_id' })
+
+            console.log(`[NUR Action] Profilo aggiornato: ${fieldName} = ${JSON.stringify(updateValue)}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Profile:', e)
+        }
+    }
+
+    // Parse [AREA_OBJECTIVE:area|title|description|why?] - Crea obiettivo per area
+    const areaObjectiveMatches = text.matchAll(/\[AREA_OBJECTIVE:(\w+)\|([^|]+)\|([^|\]]+)(?:\|([^\]]+))?\]/g)
+    for (const match of areaObjectiveMatches) {
+        const [, areaId, title, description, why] = match
+        try {
+            await supabase.from('area_objectives').insert({
+                clerk_user_id: userId,
+                area_id: areaId.trim(),
+                title: title.trim(),
+                description: description?.trim() || null,
+                why: why?.trim() || null,
+                status: 'active',
+                priority: 5
+            })
+            console.log(`[NUR Action] Obiettivo area creato: ${title} (${areaId})`)
+        } catch (e) {
+            console.error('[NUR Action Error] Area Objective:', e)
+        }
+    }
+
+    // Parse [ROUTINE_TASK:area|title|time|duration|frequency|difficulty] - Aggiunge task alla routine
+    const routineTaskMatches = text.matchAll(/\[ROUTINE_TASK:(\w+)\|([^|]+)\|([^|]+)\|(\d+)\|(\w+)\|(\w+)\]/g)
+    for (const match of routineTaskMatches) {
+        const [, areaId, title, time, duration, frequency, difficulty] = match
+        try {
+            const xpReward = DIFFICULTY_XP[difficulty.trim()] || 60
+
+            await supabase.from('routine_tasks').insert({
+                clerk_user_id: userId,
+                area_id: areaId.trim(),
+                title: title.trim(),
+                scheduled_time: time.trim(),
+                duration_minutes: parseInt(duration),
+                frequency: frequency.trim(),
+                difficulty: difficulty.trim(),
+                xp_reward: xpReward,
+                is_active: true
+            })
+            console.log(`[NUR Action] Task routine creata: ${title} alle ${time} (${difficulty}, ${xpReward} XP)`)
+        } catch (e) {
+            console.error('[NUR Action Error] Routine Task:', e)
+        }
+    }
+
+    // Parse [ROUTINE_TEMPLATE:day|wake|sleep|obligations] - Salva template giorno
+    const routineTemplateMatch = text.match(/\[ROUTINE_TEMPLATE:(\d)\|([^|]+)\|([^|]+)\|([^\]]+)\]/)
+    if (routineTemplateMatch) {
+        const [, dayOfWeek, wakeTime, sleepTime, obligationsStr] = routineTemplateMatch
+        try {
+            // Parse obligations: "09:00-18:00:lavoro,19:00-20:00:palestra"
+            const obligations = obligationsStr.split(',').map(o => {
+                const [timeRange, label] = o.split(':')
+                const [from, to] = timeRange.split('-')
+                return { from, to, label, type: 'fixed' }
+            })
+
+            await supabase.from('user_routine_template').upsert({
+                clerk_user_id: userId,
+                day_of_week: parseInt(dayOfWeek),
+                wake_time: wakeTime.trim(),
+                sleep_time: sleepTime.trim(),
+                obligations
+            }, { onConflict: 'clerk_user_id,day_of_week' })
+
+            console.log(`[NUR Action] Template routine salvato per giorno ${dayOfWeek}`)
+        } catch (e) {
+            console.error('[NUR Action Error] Routine Template:', e)
+        }
+    }
+
+    // Parse [QUEST_CHECK:quest_id] - Controlla e completa quest
+    const questCheckMatches = text.matchAll(/\[QUEST_CHECK:([^\]]+)\]/g)
+    for (const match of questCheckMatches) {
+        const [, questId] = match
+        try {
+            // Controlla se completabile
+            const { data: canComplete } = await supabase.rpc('check_quest_completion', {
+                p_clerk_user_id: userId,
+                p_quest_id: questId.trim()
+            })
+
+            if (canComplete) {
+                // Carica quest per XP
+                const { data: quest } = await supabase
+                    .from('game_quests')
+                    .select('xp_reward, title')
+                    .eq('id', questId.trim())
+                    .single()
+
+                if (quest) {
+                    // Completa quest
+                    await supabase
+                        .from('user_quest_progress')
+                        .update({
+                            status: 'completed',
+                            completed_at: new Date().toISOString(),
+                            xp_awarded: quest.xp_reward,
+                            progress_percent: 100
+                        })
+                        .eq('clerk_user_id', userId)
+                        .eq('quest_id', questId.trim())
+
+                    // Assegna XP
+                    await supabase.rpc('add_xp', {
+                        p_clerk_user_id: userId,
+                        p_amount: quest.xp_reward,
+                        p_reason: `Quest completata: ${quest.title}`,
+                        p_objective_id: null
+                    })
+
+                    // Sblocca quest successive
+                    await supabase.rpc('unlock_next_quests', {
+                        p_clerk_user_id: userId,
+                        p_completed_quest_id: questId.trim()
+                    })
+
+                    console.log(`[NUR Action] Quest completata: ${questId} (+${quest.xp_reward} XP)`)
+                }
+            }
+        } catch (e) {
+            console.error('[NUR Action Error] Quest Check:', e)
+        }
+    }
 }
 
 // ============================================
 // HELPER: Pulisci risposta dai comandi
 // ============================================
 
-function cleanResponse(text: string): string {
-    return text
+function cleanResponse(text: string, isFinal: boolean = false): string {
+    // Rimuovi i comandi NUR dal testo
+    let cleaned = text
         .replace(/\[INSIGHT:[^\]]+\]/g, '')
         .replace(/\[MISSION:[^\]]+\]/g, '')
         .replace(/\[CHAPTER:[^\]]+\]/g, '')
@@ -537,10 +895,21 @@ function cleanResponse(text: string): string {
         .replace(/\[PROGRESS:[^\]]+\]/g, '')
         .replace(/\[SAVE:[^\]]+\]/g, '')
         .replace(/\[MEMORY:[^\]]+\]/g, '')
+        .replace(/\[MATERIAL:[^\]]+\]/g, '')
+        .replace(/\[XP:[^\]]+\]/g, '')
         .replace(/\[OBJECTIVE:[^\]]+\]/g, '')
         .replace(/\[GOAL:[^\]]+\]/g, '')
         .replace(/\[MOOD:[^\]]+\]/g, '')
-        .trim()
+        // Nuovi comandi Quest System
+        .replace(/\[PROFILE:[^\]]+\]/g, '')
+        .replace(/\[AREA_OBJECTIVE:[^\]]+\]/g, '')
+        .replace(/\[ROUTINE_TASK:[^\]]+\]/g, '')
+        .replace(/\[ROUTINE_TEMPLATE:[^\]]+\]/g, '')
+        .replace(/\[QUEST_CHECK:[^\]]+\]/g, '')
+
+    // IMPORTANTE: NON fare trim() durante lo streaming per preservare gli spazi
+    // Trim solo alla fine del messaggio completo
+    return isFinal ? cleaned.trim() : cleaned
 }
 
 // ============================================
@@ -574,7 +943,7 @@ async function getLastAction(userId: string): Promise<string> {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json()
-        const { message, userId, history, conversationId: existingConvId, area } = body
+        const { message, userId, history, conversationId: existingConvId, area, isInitialMessage } = body
 
         if (!message || !userId) {
             return new Response(JSON.stringify({ error: 'Parametri mancanti' }), {
@@ -583,16 +952,26 @@ export async function POST(req: NextRequest) {
             })
         }
 
+        // Determina se NUR deve iniziare la conversazione
+        const isNurStarting = message === '__NUR_START_CONVERSATION__' || isInitialMessage
+
         const anthropic = new Anthropic({
             apiKey: process.env.ANTHROPIC_API_KEY
         })
 
-        // 1. ROUTING: HAIKU O SONNET?
-        const useSonnet = needsSonnet(message, history)
-        const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
-        console.log(`[NUR ROUTER] Message: "${message.substring(0, 50)}..." → ${useSonnet ? 'SONNET (azione)' : 'HAIKU (chat)'}`)
+        // 1. CHECK DISCOVERY MODE PRIMA del routing
+        const discoveryState = await getDiscoveryState(userId)
+        const isDiscoveryMode = discoveryState.isNewUser
+        console.log(`[NUR] Discovery mode: ${isDiscoveryMode}, insights: ${discoveryState.insightCount}`)
 
-        // 2. GESTIONE CONVERSAZIONE
+        // 2. ROUTING: HAIKU O SONNET?
+        // Discovery Mode = SEMPRE Sonnet (per garantire che i comandi [PROFILE:...] vengano usati correttamente)
+        // Sonnet è più costoso ma segue meglio le istruzioni sui comandi
+        const useSonnet = isDiscoveryMode || needsSonnet(message, history, isDiscoveryMode)
+        const modelToUse = useSonnet ? 'claude-sonnet-4-20250514' : 'claude-3-5-haiku-latest'
+        console.log(`[NUR ROUTER] ${isNurStarting ? 'NUR STARTING' : `Message: "${message.substring(0, 50)}..."`} → ${useSonnet ? 'SONNET' : 'HAIKU'} (Discovery: ${isDiscoveryMode})`)
+
+        // 3. GESTIONE CONVERSAZIONE
         let conversationId = existingConvId
 
         if (!conversationId) {
@@ -609,8 +988,8 @@ export async function POST(req: NextRequest) {
             conversationId = conv?.id
         }
 
-        // Salva messaggio utente
-        if (conversationId) {
+        // Salva messaggio utente (solo se NON è NUR che inizia)
+        if (conversationId && !isNurStarting) {
             await supabase.from('messages').insert({
                 conversation_id: conversationId,
                 clerk_user_id: userId,
@@ -620,56 +999,89 @@ export async function POST(req: NextRequest) {
             })
         }
 
-        // 3. COSTRUISCI CONTESTI
-        const userContext = await buildUserContext(userId)
+        // 4. COSTRUISCI CONTESTI
+        const fullUserContext = await buildFullUserContext(userId)
+        const compactContext = await buildCompactContext(userId)
         const missionPhase = await getMissionPhase(userId)
         const missionContext = await buildMissionContext(userId)
         const lastAction = await getLastAction(userId)
         const recentHistory = (history || []).slice(-6)
 
-        // 4. COSTRUISCI PROMPT
+        // 5. WEB SEARCH - Se l'utente chiede di cercare qualcosa
+        let webSearchResults = ''
+        if (needsWebSearch(message)) {
+            console.log('[NUR WEB] Rilevata richiesta di ricerca web')
+            const query = extractSearchQuery(message)
+            if (query) {
+                console.log(`[NUR WEB] Ricerca: "${query}"`)
+                webSearchResults = await searchAllSources(query)
+                console.log(`[NUR WEB] Risultati trovati: ${webSearchResults.length > 0 ? 'sì' : 'no'}`)
+            }
+        }
+
+        // 6. COSTRUISCI PROMPT
         let systemPrompt: string
-        if (useSonnet) {
-            // SONNET: prompt per azioni con mission context
+
+        // DISCOVERY MODE: Prima conversazione - NUR deve conoscere l'utente
+        // IMPORTANTE: Discovery Mode usa SEMPRE il Discovery Prompt (con istruzioni comandi)
+        if (isDiscoveryMode) {
+            const activeQuest = await getActiveQuest(userId)
+            console.log(`[NUR] ✅ DISCOVERY MODE ACTIVE - Quest: ${activeQuest?.title || 'none'}`)
+            console.log(`[NUR] ✅ Using DISCOVERY PROMPT with commands [PROFILE:...] and [INSIGHT:...]`)
+            systemPrompt = await generateDiscoveryPrompt(userId, compactContext, discoveryState.insights, activeQuest)
+
+            // Se ha abbastanza insight, aggiungi suggerimento di proporre missione
+            if (discoveryState.readyForMission) {
+                systemPrompt += `\n\n## NOTA: Hai raccolto abbastanza insight! Puoi proporre la missione quando senti il momento giusto.`
+            }
+        } else if (useSonnet) {
             const recentMsgs = recentHistory
                 .map((m: any) => `${m.role === 'user' ? 'User' : 'NUR'}: ${m.content}`)
                 .join('\n')
             systemPrompt = SONNET_PROMPT
-                .replace('{USER_CONTEXT}', contextToString(userContext))
+                .replace('{USER_CONTEXT}', compactContext)
                 .replace('{MISSION_PHASE}', missionPhase)
                 .replace('{MISSION_CONTEXT}', missionContext)
                 .replace('{RECENT_MESSAGES}', recentMsgs || 'Nessuna conversazione precedente')
+
+            // Aggiungi risultati web search se presenti
+            if (webSearchResults) {
+                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}`
+            }
         } else {
-            // HAIKU: USA LA PERSONALITÀ COMPLETA DI NUR!
-            // generateNurPrompt include tutta la storia, il carattere, le memorie dell'utente
-            const nurPersonality = generateNurPrompt(userContext)
+            // USA LA PERSONALITÀ COMPLETA DI NUR per Haiku!
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            systemPrompt = generateNurPrompt({
+                ...fullUserContext,
+                current_area: area
+            } as any)
 
-            // Aggiungi istruzioni operative specifiche per Haiku + mission context
-            systemPrompt = `${nurPersonality}
+            // Aggiungi contesto missione e ultima azione
+            systemPrompt += `\n\n## MISSIONE ATTUALE\n${missionContext}\n\n${lastAction}`
 
----
-
-## ISTRUZIONI OPERATIVE
-
-${lastAction ? `${lastAction}` : ''}
-
-${missionContext ? `## STATO MISSIONE\n${missionContext}\n` : ''}
-
-IMPORTANTE: Se l'utente vuole SALVARE qualcosa (guide, task, traguardi, contenuti, viaggi),
-digli: "Dimmi cosa vuoi che salvi e lo faccio subito!"
-Keywords che attivano il salvataggio: salva, crea, aggiungi, metti, task, traguardo, contenuto, viaggio, piano.
-
-Rispondi sempre in italiano. Max 1 emoji per messaggio.`
+            // Aggiungi risultati web search se presenti
+            if (webSearchResults) {
+                systemPrompt += `\n\n## RISULTATI RICERCA WEB\n${webSearchResults}\nUsa queste informazioni per rispondere all'utente.`
+            }
         }
 
         // 5. PREPARA MESSAGGI
-        const messages: Anthropic.MessageParam[] = [
-            ...recentHistory.map((m: any) => ({
-                role: m.role as 'user' | 'assistant',
-                content: m.content
-            })),
-            { role: 'user', content: message }
-        ]
+        let messages: Anthropic.MessageParam[]
+
+        if (isNurStarting) {
+            // NUR inizia: usa un messaggio che le dice di presentarsi
+            messages = [
+                { role: 'user', content: '[L\'utente è appena entrato in chat. Salutalo per primo con il suo nome se lo conosci, presentati brevemente come NUR e fagli una domanda aperta per iniziare a conoscerlo. Sii calda e accogliente ma non smielata.]' }
+            ]
+        } else {
+            messages = [
+                ...recentHistory.map((m: any) => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.content
+                })),
+                { role: 'user', content: message }
+            ]
+        }
 
         // 6. STREAMING
         const encoder = new TextEncoder()
@@ -709,7 +1121,8 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
                                     pendingBuffer = ''
                                 }
 
-                                const cleanText = cleanResponse(textToSend)
+                                // Durante streaming: NON fare trim per preservare gli spazi
+                                const cleanText = cleanResponse(textToSend, false)
                                 if (cleanText) {
                                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                                 }
@@ -719,7 +1132,7 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
 
                     // IMPORTANTE: Svuota il buffer residuo alla fine dello streaming
                     if (pendingBuffer) {
-                        const cleanText = cleanResponse(pendingBuffer)
+                        const cleanText = cleanResponse(pendingBuffer, false)
                         if (cleanText) {
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: cleanText })}\n\n`))
                         }
@@ -739,13 +1152,36 @@ Rispondi sempre in italiano. Max 1 emoji per messaggio.`
                     }
 
                     // 7. ESEGUI AZIONI
-                    if (useSonnet && fullResponse.includes('[')) {
-                        console.log('[NUR ACTION] Executing commands from Sonnet response')
+                    // Esegui SEMPRE i comandi se presenti (sia Sonnet che Haiku)
+                    const hasCommands = fullResponse.includes('[PROFILE:') ||
+                                       fullResponse.includes('[INSIGHT:') ||
+                                       fullResponse.includes('[ACTION:')
+
+                    if (hasCommands) {
+                        console.log(`[NUR ACTION] Found commands in response, executing... (Discovery: ${isDiscoveryMode})`)
+                        console.log(`[NUR ACTION] Response preview: ${fullResponse.substring(0, 200)}...`)
                         await executeActions(fullResponse, userId)
+                    } else {
+                        console.log(`[NUR ACTION] No commands found in response (Discovery: ${isDiscoveryMode})`)
+                        if (isDiscoveryMode) {
+                            console.warn('[NUR WARNING] Discovery mode but no commands! User info may be lost.')
+                        }
                     }
 
-                    // 8. SALVA RISPOSTA
-                    const cleanedResponse = cleanResponse(fullResponse)
+                    // 7b. CHECK QUEST COMPLETION
+                    // Dopo ogni risposta, controlla se qualche quest è completabile
+                    try {
+                        const { checkAllQuests } = await import('@/lib/quest-system')
+                        const completedQuests = await checkAllQuests(userId)
+                        if (completedQuests.length > 0) {
+                            console.log(`[NUR QUEST] Quests completed: ${completedQuests.join(', ')}`)
+                        }
+                    } catch (questError) {
+                        console.error('[NUR QUEST] Error checking quests:', questError)
+                    }
+
+                    // 8. SALVA RISPOSTA (con trim finale)
+                    const cleanedResponse = cleanResponse(fullResponse, true)
                     if (conversationId && cleanedResponse) {
                         await supabase.from('messages').insert({
                             conversation_id: conversationId,
