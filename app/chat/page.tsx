@@ -172,6 +172,10 @@ function ChatContent() {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const hasTriggeredInitialMessage = useRef(false)
 
+    // Message limit counter
+    const [messageCount, setMessageCount] = useState({ count: 0, limit: 20, remaining: 20 })
+    const [limitReached, setLimitReached] = useState(false)
+
     // AI Disclaimer
     const { showDisclaimer, acceptDisclaimer } = useAIDisclaimer()
 
@@ -267,6 +271,23 @@ function ChatContent() {
         }
 
         loadData()
+
+        // Fetch message count
+        const fetchMessageCount = async () => {
+            try {
+                const res = await fetch('/api/messages/count')
+                if (res.ok) {
+                    const data = await res.json()
+                    setMessageCount(data)
+                    if (data.remaining <= 0) {
+                        setLimitReached(true)
+                    }
+                }
+            } catch (e) {
+                console.log('[CHAT] Could not fetch message count')
+            }
+        }
+        if (user) fetchMessageCount()
     }, [isLoaded, user])
 
     // Gestisci parametri URL (context da altre pagine)
@@ -493,9 +514,31 @@ function ChatContent() {
                 })
             })
 
+            // Gestisci limite messaggi raggiunto
+            if (response.status === 429) {
+                const data = await response.json()
+                setLimitReached(true)
+                setMessageCount({ count: data.count, limit: data.limit, remaining: 0 })
+                setMessages(prev => [...prev, {
+                    content: '🛑 ' + data.message,
+                    role: 'assistant',
+                    timestamp: getTimestamp()
+                }])
+                setStatus('ready')
+                setStatusText('Limite raggiunto')
+                return
+            }
+
             if (!response.ok) {
                 throw new Error('Stream request failed')
             }
+
+            // Aggiorna counter
+            setMessageCount(prev => ({
+                ...prev,
+                count: prev.count + 1,
+                remaining: Math.max(0, prev.remaining - 1)
+            }))
 
             // Ora che abbiamo risposta, passa a streaming
             setStatus('streaming')
@@ -735,6 +778,24 @@ function ChatContent() {
             </main>
 
             <footer className="chat-footer">
+                {/* Message counter */}
+                <div className="message-counter">
+                    <span className={messageCount.remaining <= 5 ? 'warning' : ''}>
+                        {messageCount.remaining}/{messageCount.limit} messaggi oggi
+                    </span>
+                    {messageCount.remaining <= 5 && messageCount.remaining > 0 && (
+                        <span className="counter-warning">⚠️</span>
+                    )}
+                </div>
+
+                {/* Limit reached banner */}
+                {limitReached && (
+                    <div className="limit-banner">
+                        <p>🛑 Hai usato tutti i 20 messaggi di oggi!</p>
+                        <p>Torna domani per continuare.</p>
+                    </div>
+                )}
+
                 {insightsCount > 0 && (
                     <div className="insights-indicator">
                         💡 {insightsCount} cose imparate su di te

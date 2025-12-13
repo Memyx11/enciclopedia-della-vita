@@ -825,3 +825,52 @@
 .nav-item span:first-child {
     font-size: 20px;
 }
+
+/* Message Counter */
+.message-counter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    margin-bottom: 8px;
+}
+
+.message-counter .warning {
+    color: var(--yellow);
+    font-weight: 600;
+}
+
+.message-counter .counter-warning {
+    font-size: 14px;
+}
+
+/* Limit Reached Banner */
+.limit-banner {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.limit-banner p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--red);
+}
+
+.limit-banner p:first-child {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.limit-banner p:last-child {
+    font-size: 12px;
+    opacity: 0.8;
+}

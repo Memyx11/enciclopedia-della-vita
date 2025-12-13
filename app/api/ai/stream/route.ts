@@ -270,7 +270,7 @@ export async function POST(req: NextRequest) {
 
                     const stream = anthropic.messages.stream({
                         model: modelToUse,
-                        max_tokens: 500, // Ridotto per risposte brevi
+                        max_tokens: 1000, // Aumentato per evitare troncamento
                         system: [
                             {
                                 type: 'text',
@@ -280,6 +280,7 @@ export async function POST(req: NextRequest) {
                         ],
                         messages
                     })
+                    console.log('[NUR STREAM] Starting stream...')
 
                     for await (const event of stream) {
                         if (event.type === 'content_block_delta') {
@@ -326,6 +327,8 @@ export async function POST(req: NextRequest) {
                     }
 
                     // Fine streaming: pulisci e invia il resto
+                    console.log('[NUR STREAM] Stream completed, fullResponse length:', fullResponse.length)
+
                     // Rimuovi tutti i tool tags rimasti
                     const finalClean = streamBuffer.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, '').trim()
                     if (finalClean) {
