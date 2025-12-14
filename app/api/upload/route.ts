@@ -4,7 +4,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+// Client dedicato con service_role key per bypass RLS
+function getSupabaseAdmin() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+    console.log('[UPLOAD] Creating client with service key:', !!serviceKey)
+
+    return createClient(url, serviceKey || anonKey)
+}
 
 // Configurazione
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
@@ -51,8 +62,8 @@ const TYPE_ICONS: Record<string, string> = {
  */
 export async function POST(req: NextRequest) {
     try {
-        // Debug: verifica quale key sta usando
-        console.log('[UPLOAD] Using service key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+        // Crea client admin per questa richiesta
+        const supabase = getSupabaseAdmin()
 
         const formData = await req.formData()
         const file = formData.get('file') as File | null
@@ -171,6 +182,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
     try {
+        const supabase = getSupabaseAdmin()
         const { searchParams } = new URL(req.url)
         const materialId = searchParams.get('materialId')
         const userId = searchParams.get('userId')

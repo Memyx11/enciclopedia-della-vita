@@ -247,6 +247,75 @@ async function addRoutineTask(userId: string, params: {
   return { success: true, message: 'Task aggiunta (+' + (xpMap[params.difficulty] || 60) + ' XP/giorno)' }
 }
 
+async function webSearch(userId: string, params: { query: string }): Promise<ToolResult> {
+  console.log('[TOOL:web_search] Searching:', params.query)
+
+  try {
+    // Usa Serper API per ricerca Google (economica e veloce)
+    const serperKey = process.env.SERPER_API_KEY
+
+    if (!serperKey) {
+      console.log('[TOOL:web_search] No SERPER_API_KEY, using fallback')
+      return {
+        success: false,
+        message: 'Ricerca web non configurata. Posso rispondere solo con le mie conoscenze.'
+      }
+    }
+
+    const response = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': serperKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q: params.query,
+        gl: 'it',
+        hl: 'it',
+        num: 5
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error('Search API error: ' + response.status)
+    }
+
+    const data = await response.json()
+
+    // Estrai risultati rilevanti
+    const results: string[] = []
+
+    // Answer box (se presente)
+    if (data.answerBox?.answer) {
+      results.push('📌 ' + data.answerBox.answer)
+    }
+
+    // Knowledge graph (se presente)
+    if (data.knowledgeGraph?.description) {
+      results.push('📚 ' + data.knowledgeGraph.description)
+    }
+
+    // Organic results
+    if (data.organic) {
+      data.organic.slice(0, 3).forEach((r: any) => {
+        results.push(`• ${r.title}: ${r.snippet}`)
+      })
+    }
+
+    const summary = results.join('\n\n')
+    console.log('[TOOL:web_search] Found', results.length, 'results')
+
+    return {
+      success: true,
+      message: 'Ricerca completata',
+      data: { query: params.query, results: summary }
+    }
+  } catch (error: any) {
+    console.error('[TOOL:web_search] Error:', error.message)
+    return { success: false, message: 'Errore ricerca: ' + error.message }
+  }
+}
+
 export function parseToolCalls(text: string): Array<{tool: string, params: any}> {
   const regex = /\[TOOL:(\w+)\]([\s\S]*?)\[\/TOOL\]/g
   const calls: Array<{tool: string, params: any}> = []
@@ -289,6 +358,9 @@ export async function executeToolCalls(userId: string, toolCalls: Array<{tool: s
         break
       case 'add_routine_task':
         result = await addRoutineTask(userId, call.params)
+        break
+      case 'web_search':
+        result = await webSearch(userId, call.params)
         break
       default:
         result = { success: false, message: 'Tool sconosciuto: ' + call.tool }

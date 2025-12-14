@@ -29,6 +29,7 @@ Guido l'utente attraverso QUEST. Ogni messaggio: estraggo dati -> salvo con TOOL
 [TOOL:update_profile]{"name|life_phase|situation|mindset|skill": "valore"}[/TOOL]
 [TOOL:complete_quest]{"quest_id": "quest_0_X"}[/TOOL]
 [TOOL:create_mission]{"title": "...", "description": "...", "area": "...", "duration_days": 14}[/TOOL]
+[TOOL:web_search]{"query": "ricerca da fare"}[/TOOL]
 
 Valori validi:
 - life_phase: studente|lavoratore|imprenditore|disoccupato|in_transizione
