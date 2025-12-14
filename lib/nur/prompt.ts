@@ -116,25 +116,41 @@ export async function generateNurPrompt(
   userId: string,
   quest: any
 ): Promise<string> {
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('user_profile_data')
     .select('*')
     .eq('clerk_user_id', userId)
     .single()
 
-  const { data: insights } = await supabase
+  const { data: insights, error: insightsError } = await supabase
     .from('user_insights')
     .select('*')
     .eq('clerk_user_id', userId)
     .order('created_at', { ascending: false })
     .limit(5)
 
+  // DEBUG LOGS - Memoria
+  console.log('[MEMORY] Profile loaded:', profile ? {
+    name: profile.name,
+    life_phase: profile.life_phase,
+    situation: profile.situation,
+    mindset: profile.mindset,
+    skills: profile.skills
+  } : 'NONE', profileError?.message || '')
+  console.log('[MEMORY] Insights loaded:', insights?.length || 0, 'items')
+  if (insights?.length) {
+    console.log('[MEMORY] Recent insights:', insights.map(i => `${i.category}:${i.content?.substring(0, 30)}`).join(' | '))
+  }
+  console.log('[MEMORY] Quest active:', quest?.id || quest?.quest_id || 'none')
+
   const prompt = NUR_SYSTEM_PROMPT
     .replace('{QUEST_STATUS}', buildQuestStatus(quest, profile))
     .replace('{PROFILE_STATUS}', buildProfileStatus(profile))
     .replace('{INSIGHTS_LIST}', buildInsightsList(insights || []))
 
-  console.log('[NUR PROMPT] User:', userId, '| Quest:', quest?.id || 'none')
+  // Log token estimate
+  const tokenEstimate = Math.ceil(prompt.length / 4)
+  console.log('[NUR PROMPT] User:', userId, '| Tokens ~', tokenEstimate)
 
   return prompt
 }

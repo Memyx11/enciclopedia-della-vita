@@ -51,6 +51,9 @@ const TYPE_ICONS: Record<string, string> = {
  */
 export async function POST(req: NextRequest) {
     try {
+        // Debug: verifica quale key sta usando
+        console.log('[UPLOAD] Using service key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+
         const formData = await req.formData()
         const file = formData.get('file') as File | null
         const userId = formData.get('userId') as string | null
