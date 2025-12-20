@@ -1,257 +1,75 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
-import FileUpload from '@/components/ui/FileUpload'
+import { supabaseClient } from '@/lib/supabase/client'
 import './giornale.css'
 
-// ============================================
-// TYPES
-// ============================================
-
-interface TaskMaterial {
+interface Material {
     id: string
-    objective_id: string | null
-    title: string
+    name: string
     description: string | null
-    material_type: 'document' | 'link' | 'video' | 'checklist' | 'script' | 'template' | 'note' | 'image'
-    content: string | null
-    url: string | null
-    icon: string
-    sort_order: number
-    created_by: 'nur' | 'user'
-    created_at: string
-    file_path?: string | null
-    file_size?: number | null
-    file_mime_type?: string | null
-}
-
-interface Objective {
-    id: string
-    mission_id: string
-    parent_id: string | null
-    level: 'major' | 'sub' | 'task' | 'micro'
-    title: string
-    description: string | null
-    status: 'pending' | 'active' | 'completed' | 'skipped'
+    category: string
+    rarity: string
+    is_owned: boolean
     progress: number
-    difficulty: string
-    xp_reward: number
 }
 
-interface Mission {
+interface Goal {
     id: string
     title: string
-    description: string | null
+    goal_type: string
+    status: string
+    progress: number
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-
-const MATERIAL_TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
-    document: { icon: '📄', label: 'Documento', color: '#339af0' },
-    link: { icon: '🔗', label: 'Link', color: '#51cf66' },
-    video: { icon: '🎬', label: 'Video', color: '#ff6b6b' },
-    checklist: { icon: '✅', label: 'Checklist', color: '#fab005' },
-    script: { icon: '📝', label: 'Script', color: '#cc5de8' },
-    template: { icon: '📋', label: 'Template', color: '#20c997' },
-    note: { icon: '💭', label: 'Nota', color: '#845ef7' },
-    image: { icon: '🖼️', label: 'Immagine', color: '#f59e0b' }
-}
-
-// ============================================
-// COMPONENT
-// ============================================
-
-export default function ScrivaniaPage() {
+export default function GiornalePage() {
     const { user, isLoaded } = useUser()
-
-    // State
+    const [materials, setMaterials] = useState<Material[]>([])
+    const [goals, setGoals] = useState<Goal[]>([])
     const [loading, setLoading] = useState(true)
-    const [mission, setMission] = useState<Mission | null>(null)
-    const [activeTask, setActiveTask] = useState<Objective | null>(null)
-    const [activeStep, setActiveStep] = useState<Objective | null>(null)
-    const [materials, setMaterials] = useState<TaskMaterial[]>([])
-    const [allMaterials, setAllMaterials] = useState<TaskMaterial[]>([])
-    const [viewMode, setViewMode] = useState<'task' | 'all'>('task')
-    const [expandedMaterial, setExpandedMaterial] = useState<string | null>(null)
-    const [editingMaterial, setEditingMaterial] = useState<string | null>(null)
-    const [editContent, setEditContent] = useState('')
+    const [viewMode, setViewMode] = useState<'materials' | 'goals'>('materials')
 
-    // New material form
-    const [showAddForm, setShowAddForm] = useState(false)
-    const [showUploadForm, setShowUploadForm] = useState(false)
-    const [newMaterial, setNewMaterial] = useState({
-        title: '',
-        content: '',
-        url: '',
-        material_type: 'note' as TaskMaterial['material_type']
-    })
+    useEffect(() => {
+        if (!isLoaded || !user) {
+            setLoading(false)
+            return
+        }
 
-    // ============================================
-    // DATA LOADING
-    // ============================================
-
-    const loadData = useCallback(async () => {
-        if (!user) return
-
-        try {
-            // Load mission (maybeSingle perché potrebbe non esistere)
-            const { data: missionData } = await supabase
-                .from('user_mission')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .eq('status', 'active')
-                .maybeSingle()
-
-            setMission(missionData)
-
-            if (!missionData) {
-                setLoading(false)
-                return
-            }
-
-            // Load objectives
-            const { data: objectives } = await supabase
-                .from('objectives')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .eq('mission_id', missionData.id)
-                .order('sort_order')
-
-            const objs = (objectives || []) as Objective[]
-
-            // Find active task using chain logic
-            const chapters = objs.filter(o => o.level === 'major').sort((a, b) => a.progress - b.progress)
-            const activeChapter = chapters.find(c => c.status !== 'completed')
-
-            if (activeChapter) {
-                const steps = objs.filter(o => o.level === 'sub' && o.parent_id === activeChapter.id)
-                const step = steps.find(s => s.status !== 'completed')
-                setActiveStep(step || null)
-
-                if (step) {
-                    const tasks = objs.filter(o => o.level === 'task' && o.parent_id === step.id)
-                    const task = tasks.find(t => t.status !== 'completed')
-                    setActiveTask(task || null)
-                }
-            }
-
-            // Load materials for active task
-            if (activeTask?.id) {
-                const { data: taskMaterials } = await supabase
-                    .from('task_materials')
+        const loadData = async () => {
+            try {
+                // Load materials
+                const { data: materialsData } = await supabaseClient
+                    .from('materials')
                     .select('*')
                     .eq('clerk_user_id', user.id)
-                    .eq('objective_id', activeTask.id)
+                    .order('created_at', { ascending: false })
+
+                if (materialsData) {
+                    setMaterials(materialsData)
+                }
+
+                // Load goals
+                const { data: goalsData } = await supabaseClient
+                    .from('goals')
+                    .select('*')
+                    .eq('clerk_user_id', user.id)
+                    .neq('status', 'completed')
                     .order('sort_order')
 
-                setMaterials(taskMaterials || [])
+                if (goalsData) {
+                    setGoals(goalsData)
+                }
+            } catch (error) {
+                console.error('Error loading data:', error)
+            } finally {
+                setLoading(false)
             }
-
-            // Load all materials
-            const { data: allMats } = await supabase
-                .from('task_materials')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .order('created_at', { ascending: false })
-
-            setAllMaterials(allMats || [])
-
-        } catch (error) {
-            console.error('Error loading data:', error)
-        } finally {
-            setLoading(false)
         }
-    }, [user, activeTask?.id])
 
-    useEffect(() => {
-        if (isLoaded && user) {
-            loadData()
-        } else if (isLoaded && !user) {
-            setLoading(false)
-        }
-    }, [isLoaded, user, loadData])
-
-    // Reload materials when activeTask changes
-    useEffect(() => {
-        if (activeTask?.id && user) {
-            supabase
-                .from('task_materials')
-                .select('*')
-                .eq('clerk_user_id', user.id)
-                .eq('objective_id', activeTask.id)
-                .order('sort_order')
-                .then(({ data }) => {
-                    setMaterials(data || [])
-                })
-        }
-    }, [activeTask?.id, user])
-
-    // ============================================
-    // ACTIONS
-    // ============================================
-
-    const handleAddMaterial = async () => {
-        if (!user || !newMaterial.title.trim()) return
-
-        const { error } = await supabase
-            .from('task_materials')
-            .insert({
-                clerk_user_id: user.id,
-                objective_id: activeTask?.id || null,
-                title: newMaterial.title.trim(),
-                content: newMaterial.content.trim() || null,
-                url: newMaterial.url.trim() || null,
-                material_type: newMaterial.material_type,
-                icon: MATERIAL_TYPE_CONFIG[newMaterial.material_type].icon,
-                created_by: 'user',
-                sort_order: materials.length
-            })
-
-        if (!error) {
-            setNewMaterial({ title: '', content: '', url: '', material_type: 'note' })
-            setShowAddForm(false)
-            loadData()
-        }
-    }
-
-    const handleDeleteMaterial = async (id: string) => {
-        if (!confirm('Eliminare questo materiale?')) return
-
-        await supabase
-            .from('task_materials')
-            .delete()
-            .eq('id', id)
-
-        setMaterials(prev => prev.filter(m => m.id !== id))
-        setAllMaterials(prev => prev.filter(m => m.id !== id))
-    }
-
-    const handleUpdateMaterial = async (id: string) => {
-        if (!editContent.trim()) return
-
-        await supabase
-            .from('task_materials')
-            .update({ content: editContent.trim() })
-            .eq('id', id)
-
-        setMaterials(prev => prev.map(m =>
-            m.id === id ? { ...m, content: editContent.trim() } : m
-        ))
-        setAllMaterials(prev => prev.map(m =>
-            m.id === id ? { ...m, content: editContent.trim() } : m
-        ))
-        setEditingMaterial(null)
-        setEditContent('')
-    }
-
-    // ============================================
-    // RENDER
-    // ============================================
+        loadData()
+    }, [isLoaded, user])
 
     if (!isLoaded) return null
 
@@ -262,20 +80,50 @@ export default function ScrivaniaPage() {
                 <div className="auth-state">
                     <div className="auth-icon">📚</div>
                     <h1>La Tua Scrivania</h1>
-                    <p>Accedi per vedere i materiali che NUR ha preparato per te</p>
+                    <p>Accedi per vedere i tuoi materiali e obiettivi</p>
                     <Link href="/" className="btn-primary">Vai alla Home</Link>
                 </div>
             </div>
         )
     }
 
-    const displayMaterials = viewMode === 'task' ? materials : allMaterials
+    const getRarityColor = (rarity: string) => {
+        const colors: Record<string, string> = {
+            comune: '#718096',
+            non_comune: '#48BB78',
+            raro: '#4299E1',
+            epico: '#9F7AEA',
+            leggendario: '#F6AD55'
+        }
+        return colors[rarity] || colors.comune
+    }
+
+    const getCategoryIcon = (category: string) => {
+        const icons: Record<string, string> = {
+            tech: '💻',
+            libri: '📚',
+            corsi: '🎓',
+            strumenti: '🔧',
+            documenti: '📄',
+            veicoli: '🚗'
+        }
+        return icons[category] || '📦'
+    }
+
+    const getGoalTypeIcon = (type: string) => {
+        const icons: Record<string, string> = {
+            obiettivo: '🎯',
+            boss: '👹',
+            sogno: '⭐'
+        }
+        return icons[type] || '🎯'
+    }
 
     return (
         <div className="scrivania-page">
             <div className="scrivania-glow"></div>
 
-            {/* ===== HEADER ===== */}
+            {/* Header */}
             <header className="scrivania-header">
                 <Link href="/la-mia-vita" className="back-btn">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -291,333 +139,122 @@ export default function ScrivaniaPage() {
                 </Link>
             </header>
 
-            {/* ===== TASK CONTEXT ===== */}
-            {activeTask && (
-                <div className="task-context">
-                    <div className="context-label">MATERIALI PER</div>
-                    <div className="context-task">
-                        <span className="task-icon">🎯</span>
-                        <span className="task-title">{activeTask.title}</span>
-                    </div>
-                    {activeStep && (
-                        <div className="context-step">
-                            Step: {activeStep.title}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* ===== VIEW TOGGLE ===== */}
+            {/* View Toggle */}
             <div className="view-toggle">
                 <button
-                    className={`toggle-btn ${viewMode === 'task' ? 'active' : ''}`}
-                    onClick={() => setViewMode('task')}
+                    className={`toggle-btn ${viewMode === 'materials' ? 'active' : ''}`}
+                    onClick={() => setViewMode('materials')}
                 >
-                    <span>🎯</span>
-                    Task Attuale ({materials.length})
+                    <span>📦</span>
+                    Materiali ({materials.length})
                 </button>
                 <button
-                    className={`toggle-btn ${viewMode === 'all' ? 'active' : ''}`}
-                    onClick={() => setViewMode('all')}
+                    className={`toggle-btn ${viewMode === 'goals' ? 'active' : ''}`}
+                    onClick={() => setViewMode('goals')}
                 >
-                    <span>📁</span>
-                    Tutti ({allMaterials.length})
+                    <span>🎯</span>
+                    Obiettivi ({goals.length})
                 </button>
             </div>
 
-            {/* ===== MAIN CONTENT ===== */}
+            {/* Main Content */}
             <main className="scrivania-main">
                 {loading ? (
                     <div className="loading-state">
                         <div className="spinner"></div>
-                        <p>Carico i materiali...</p>
+                        <p>Caricamento...</p>
                     </div>
-                ) : displayMaterials.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-visual">
-                            <div className="empty-icon">📚</div>
-                            <div className="empty-particles">
-                                <span>✨</span>
-                                <span>📄</span>
-                                <span>🔗</span>
+                ) : viewMode === 'materials' ? (
+                    materials.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-visual">
+                                <div className="empty-icon">📚</div>
                             </div>
-                        </div>
-                        <h3>Nessun materiale ancora</h3>
-                        <p>
-                            {viewMode === 'task'
-                                ? 'NUR aggiungerà qui i materiali per la tua task'
-                                : 'Inizia aggiungendo materiali o parla con NUR'}
-                        </p>
-                        <div className="empty-actions">
-                            <button className="btn-upload" onClick={() => setShowUploadForm(true)}>
-                                <span>📤</span> Carica file
-                            </button>
-                            <button className="btn-add" onClick={() => setShowAddForm(true)}>
-                                <span>➕</span> Aggiungi nota
-                            </button>
+                            <h3>Nessun materiale</h3>
+                            <p>Parla con NUR per aggiungere materiali</p>
                             <Link href="/chat" className="btn-nur">
-                                <span>💬</span> Chiedi a NUR
+                                <span>💬</span> Parla con NUR
                             </Link>
                         </div>
-
-                        {/* Upload Form */}
-                        {showUploadForm && user && (
-                            <div className="upload-modal">
-                                <div className="upload-modal-header">
-                                    <h3>Carica un file</h3>
-                                    <button className="close-btn" onClick={() => setShowUploadForm(false)}>✕</button>
-                                </div>
-                                <FileUpload
-                                    userId={user.id}
-                                    objectiveId={activeTask?.id}
-                                    onUploadComplete={(material) => {
-                                        setShowUploadForm(false)
-                                        loadData()
-                                    }}
-                                    onUploadError={(error) => {
-                                        console.error('Upload error:', error)
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="materials-grid">
-                        {displayMaterials.map(material => {
-                            const typeConfig = MATERIAL_TYPE_CONFIG[material.material_type] || MATERIAL_TYPE_CONFIG.note
-                            const isExpanded = expandedMaterial === material.id
-                            const isEditing = editingMaterial === material.id
-
-                            return (
-                                <article
-                                    key={material.id}
-                                    className={`material-card ${isExpanded ? 'expanded' : ''}`}
-                                    onClick={() => !isEditing && setExpandedMaterial(isExpanded ? null : material.id)}
-                                >
-                                    {/* Type Badge */}
+                    ) : (
+                        <div className="materials-grid">
+                            {materials.map(material => (
+                                <article key={material.id} className="material-card">
                                     <div
                                         className="material-type-badge"
-                                        style={{ '--type-color': typeConfig.color } as React.CSSProperties}
+                                        style={{ '--type-color': getRarityColor(material.rarity) } as React.CSSProperties}
                                     >
-                                        <span>{material.icon || typeConfig.icon}</span>
-                                        <span>{typeConfig.label}</span>
+                                        <span>{getCategoryIcon(material.category)}</span>
+                                        <span>{material.category}</span>
                                     </div>
-
-                                    {/* Title */}
-                                    <h3 className="material-title">{material.title}</h3>
-
-                                    {/* Content */}
-                                    {isEditing ? (
-                                        <div className="edit-area" onClick={e => e.stopPropagation()}>
-                                            <textarea
-                                                value={editContent}
-                                                onChange={e => setEditContent(e.target.value)}
-                                                placeholder="Contenuto..."
-                                                autoFocus
-                                            />
-                                            <div className="edit-actions">
-                                                <button className="btn-save" onClick={() => handleUpdateMaterial(material.id)}>
-                                                    ✓ Salva
-                                                </button>
-                                                <button className="btn-cancel" onClick={() => setEditingMaterial(null)}>
-                                                    ✕ Annulla
-                                                </button>
+                                    <h3 className="material-title">{material.name}</h3>
+                                    {material.description && (
+                                        <p className="material-content">{material.description}</p>
+                                    )}
+                                    <div className="material-footer">
+                                        <span className="material-rarity" style={{ color: getRarityColor(material.rarity) }}>
+                                            {material.rarity}
+                                        </span>
+                                        {material.is_owned && (
+                                            <span className="material-owned">✅ Posseduto</span>
+                                        )}
+                                    </div>
+                                    {material.progress > 0 && material.progress < 100 && (
+                                        <div className="material-progress">
+                                            <div className="progress-bar">
+                                                <div
+                                                    className="progress-fill"
+                                                    style={{ width: `${material.progress}%` }}
+                                                />
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {material.content && (
-                                                <div className={`material-content ${isExpanded ? 'full' : 'preview'}`}>
-                                                    {material.content.split('\n').map((line, i) => (
-                                                        <p key={i}>{line}</p>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {/* URL */}
-                                            {material.url && (
-                                                <a
-                                                    href={material.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="material-url"
-                                                    onClick={e => e.stopPropagation()}
-                                                >
-                                                    🔗 {new URL(material.url).hostname}
-                                                </a>
-                                            )}
-                                        </>
-                                    )}
-
-                                    {/* Description */}
-                                    {material.description && isExpanded && (
-                                        <p className="material-description">{material.description}</p>
-                                    )}
-
-                                    {/* Expand hint */}
-                                    {!isExpanded && material.content && material.content.length > 100 && (
-                                        <div className="expand-hint">Tocca per espandere</div>
-                                    )}
-
-                                    {/* Actions */}
-                                    {isExpanded && !isEditing && (
-                                        <div className="material-actions" onClick={e => e.stopPropagation()}>
-                                            <button
-                                                className="action-btn edit"
-                                                onClick={() => {
-                                                    setEditingMaterial(material.id)
-                                                    setEditContent(material.content || '')
-                                                }}
-                                            >
-                                                ✏️ Modifica
-                                            </button>
-                                            <Link
-                                                href={`/chat?context=${encodeURIComponent(`Parliamo del materiale: ${material.title}`)}`}
-                                                className="action-btn chat"
-                                            >
-                                                💬 Discuti
-                                            </Link>
-                                            <button
-                                                className="action-btn delete"
-                                                onClick={() => handleDeleteMaterial(material.id)}
-                                            >
-                                                🗑️
-                                            </button>
+                                            <span>{material.progress}%</span>
                                         </div>
                                     )}
-
-                                    {/* Source badge */}
-                                    <div className="material-source">
-                                        {material.created_by === 'nur' ? '✨ NUR' : '👤 Tu'}
+                                </article>
+                            ))}
+                        </div>
+                    )
+                ) : (
+                    goals.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-visual">
+                                <div className="empty-icon">🎯</div>
+                            </div>
+                            <h3>Nessun obiettivo attivo</h3>
+                            <p>Parla con NUR per creare i tuoi obiettivi</p>
+                            <Link href="/chat" className="btn-nur">
+                                <span>💬</span> Parla con NUR
+                            </Link>
+                        </div>
+                    ) : (
+                        <div className="goals-list">
+                            {goals.map(goal => (
+                                <article key={goal.id} className="goal-card">
+                                    <div className="goal-icon">{getGoalTypeIcon(goal.goal_type)}</div>
+                                    <div className="goal-info">
+                                        <h3>{goal.title}</h3>
+                                        <div className="goal-meta">
+                                            <span className={`goal-type ${goal.goal_type}`}>{goal.goal_type}</span>
+                                            <span className={`goal-status ${goal.status}`}>{goal.status}</span>
+                                        </div>
+                                        <div className="goal-progress">
+                                            <div className="progress-bar">
+                                                <div
+                                                    className="progress-fill"
+                                                    style={{ width: `${goal.progress}%` }}
+                                                />
+                                            </div>
+                                            <span>{goal.progress}%</span>
+                                        </div>
                                     </div>
                                 </article>
-                            )
-                        })}
-                    </div>
-                )}
-
-                {/* Floating Action Buttons */}
-                {!loading && displayMaterials.length > 0 && (
-                    <div className="fab-container">
-                        <button className="fab fab-upload" onClick={() => setShowUploadForm(true)}>
-                            <span>📤</span>
-                        </button>
-                        <button className="fab fab-add" onClick={() => setShowAddForm(true)}>
-                            <span>➕</span>
-                        </button>
-                    </div>
+                            ))}
+                        </div>
+                    )
                 )}
             </main>
 
-            {/* ===== UPLOAD MODAL ===== */}
-            {showUploadForm && user && (
-                <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
-                    <div className="add-modal upload-modal-full" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>📤 Carica File</h2>
-                            <button className="close-btn" onClick={() => setShowUploadForm(false)}>✕</button>
-                        </div>
-                        <div className="upload-content-area">
-                            <FileUpload
-                                userId={user.id}
-                                objectiveId={activeTask?.id}
-                                onUploadComplete={(material) => {
-                                    setShowUploadForm(false)
-                                    loadData()
-                                }}
-                                onUploadError={(error) => {
-                                    console.error('Upload error:', error)
-                                }}
-                            />
-                            <div className="upload-info">
-                                <p>Tipi supportati: PDF, Word, TXT, immagini, video</p>
-                                <p>Dimensione massima: 10MB</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ===== ADD MATERIAL FORM ===== */}
-            {showAddForm && (
-                <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
-                    <div className="add-modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>➕ Nuovo Materiale</h2>
-                            <button className="close-btn" onClick={() => setShowAddForm(false)}>✕</button>
-                        </div>
-
-                        <div className="form-group">
-                            <label>Tipo</label>
-                            <div className="type-selector">
-                                {Object.entries(MATERIAL_TYPE_CONFIG).map(([key, config]) => (
-                                    <button
-                                        key={key}
-                                        className={`type-option ${newMaterial.material_type === key ? 'active' : ''}`}
-                                        onClick={() => setNewMaterial(prev => ({ ...prev, material_type: key as TaskMaterial['material_type'] }))}
-                                        style={{ '--opt-color': config.color } as React.CSSProperties}
-                                    >
-                                        <span>{config.icon}</span>
-                                        <span>{config.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="form-group">
-                            <label>Titolo *</label>
-                            <input
-                                type="text"
-                                value={newMaterial.title}
-                                onChange={e => setNewMaterial(prev => ({ ...prev, title: e.target.value }))}
-                                placeholder="Es: Guida alla vendita telefonica"
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label>Contenuto</label>
-                            <textarea
-                                value={newMaterial.content}
-                                onChange={e => setNewMaterial(prev => ({ ...prev, content: e.target.value }))}
-                                placeholder="Appunti, note, testo..."
-                                rows={4}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label>URL (opzionale)</label>
-                            <input
-                                type="url"
-                                value={newMaterial.url}
-                                onChange={e => setNewMaterial(prev => ({ ...prev, url: e.target.value }))}
-                                placeholder="https://..."
-                            />
-                        </div>
-
-                        <div className="modal-actions">
-                            <button className="btn-cancel" onClick={() => setShowAddForm(false)}>
-                                Annulla
-                            </button>
-                            <button
-                                className="btn-save"
-                                onClick={handleAddMaterial}
-                                disabled={!newMaterial.title.trim()}
-                            >
-                                ✓ Aggiungi
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ===== FAB ADD ===== */}
-            {!showAddForm && displayMaterials.length > 0 && (
-                <button className="fab-add" onClick={() => setShowAddForm(true)}>
-                    <span>➕</span>
-                </button>
-            )}
-
-            {/* ===== BOTTOM NAV ===== */}
+            {/* Bottom Nav */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item">
                     <span className="nav-icon">🏠</span>

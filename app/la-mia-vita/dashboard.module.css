@@ -1,0 +1,683 @@
+/* =====================================================
+   NUR: LIFE RPG - Dashboard Styles
+   Based on nur-home-v2.html mockup
+   ===================================================== */
+
+.layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    min-height: 100vh;
+}
+
+/* =====================================================
+   LEFT SIDEBAR - Navigation
+   ===================================================== */
+
+.sidebar {
+    background: rgba(0, 0, 0, 0.3);
+    border-right: 1px solid var(--border);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-xl);
+    padding: var(--space-sm);
+}
+
+.logoIcon {
+    font-size: 24px;
+    color: var(--purple-light);
+}
+
+.logoText {
+    font-size: var(--text-lg);
+    font-weight: 700;
+}
+
+.nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.navItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-md);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    font-size: var(--text-base);
+}
+
+.navItem:hover {
+    background: var(--bg-card);
+    color: var(--text);
+}
+
+.navItem.active {
+    background: rgba(107, 70, 193, 0.15);
+    color: var(--purple-light);
+}
+
+.navIcon {
+    font-size: 20px;
+    width: 24px;
+    text-align: center;
+}
+
+.navDivider {
+    height: 1px;
+    background: var(--border);
+    margin: var(--space-md) 0;
+}
+
+.sidebarFooter {
+    margin-top: auto;
+    padding-top: var(--space-lg);
+    border-top: 1px solid var(--border);
+}
+
+.userCard {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.userAvatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--gradient-purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: white;
+}
+
+.userInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.userName {
+    font-size: var(--text-base);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.userLevel {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* =====================================================
+   MAIN CONTENT
+   ===================================================== */
+
+.main {
+    padding: var(--space-xl);
+    overflow-y: auto;
+}
+
+/* Stats Row */
+.statsRow {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+}
+
+.statCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.statIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.statIcon.purple { background: rgba(107, 70, 193, 0.2); }
+.statIcon.gold { background: rgba(246, 173, 85, 0.2); }
+.statIcon.green { background: rgba(72, 187, 120, 0.2); }
+.statIcon.red { background: rgba(245, 101, 101, 0.2); }
+
+.statInfo {
+    flex: 1;
+}
+
+.statValue {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.statLabel {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* Mission Banner */
+.missionBanner {
+    background: linear-gradient(135deg, rgba(107, 70, 193, 0.2), rgba(159, 122, 234, 0.1));
+    border: 1px solid rgba(107, 70, 193, 0.3);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xl);
+    margin-bottom: var(--space-xl);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xl);
+}
+
+.missionIcon {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-lg);
+    background: var(--gradient-purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+}
+
+.missionContent {
+    flex: 1;
+}
+
+.missionLabel {
+    font-size: var(--text-sm);
+    color: var(--purple-light);
+    margin-bottom: var(--space-xs);
+}
+
+.missionTitle {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    margin-bottom: var(--space-sm);
+}
+
+.missionProgress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.missionProgressBar {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.missionProgressFill {
+    height: 100%;
+    background: var(--gradient-purple);
+    border-radius: var(--radius-full);
+}
+
+.missionProgressText {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.missionAction {
+    padding: var(--space-md) var(--space-xl);
+    background: var(--gradient-purple);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: var(--text-base);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.missionAction:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-purple);
+}
+
+/* Section Headers */
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+}
+
+.sectionTitle {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.sectionLink {
+    font-size: var(--text-sm);
+    color: var(--purple-light);
+    text-decoration: none;
+}
+
+.sectionLink:hover {
+    text-decoration: underline;
+}
+
+/* Areas Grid */
+.areasGrid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+}
+
+.areaCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+}
+
+.areaCard:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+}
+
+.areaCard.hasPrimary {
+    border-color: var(--gold);
+    background: rgba(246, 173, 85, 0.05);
+}
+
+.areaIcon {
+    font-size: 32px;
+    margin-bottom: var(--space-sm);
+}
+
+.areaName {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    margin-bottom: var(--space-xs);
+}
+
+.areaProgress {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+}
+
+.areaBar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.areaBarFill {
+    height: 100%;
+    border-radius: var(--radius-full);
+}
+
+/* Tasks Section */
+.tasksSection {
+    margin-bottom: var(--space-xl);
+}
+
+.tasksList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.taskItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.taskItem:hover {
+    border-color: var(--border-hover);
+}
+
+.taskItem.boss {
+    border-left: 4px solid var(--red);
+    background: rgba(245, 101, 101, 0.05);
+}
+
+.taskItem.completed {
+    opacity: 0.6;
+}
+
+.taskCheckbox {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.taskItem:hover .taskCheckbox {
+    border-color: var(--purple);
+}
+
+.taskItem.completed .taskCheckbox {
+    background: var(--green);
+    border-color: var(--green);
+    color: white;
+}
+
+.taskContent {
+    flex: 1;
+    min-width: 0;
+}
+
+.taskTitle {
+    font-size: var(--text-base);
+    font-weight: 500;
+}
+
+.taskItem.completed .taskTitle {
+    text-decoration: line-through;
+}
+
+.taskMeta {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.taskXp {
+    font-size: var(--text-sm);
+    color: var(--gold);
+    font-weight: 600;
+}
+
+.taskBadge {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(245, 101, 101, 0.15);
+    color: var(--red);
+    font-weight: 600;
+}
+
+/* =====================================================
+   RIGHT PANEL
+   ===================================================== */
+
+.rightPanel {
+    background: rgba(0, 0, 0, 0.3);
+    border-left: 1px solid var(--border);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+/* Current Activity */
+.activityCard {
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.15), rgba(72, 187, 120, 0.05));
+    border: 1px solid rgba(72, 187, 120, 0.3);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+}
+
+.activityHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+}
+
+.activityLabel {
+    font-size: var(--text-sm);
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.activityDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.activityTimer {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.activityTitle {
+    font-size: var(--text-md);
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+}
+
+.activityProgress {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.activityProgressFill {
+    height: 100%;
+    background: var(--green);
+    border-radius: var(--radius-full);
+}
+
+/* Streak Card */
+.streakCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    text-align: center;
+}
+
+.streakIcon {
+    font-size: 48px;
+    margin-bottom: var(--space-sm);
+}
+
+.streakValue {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--gold);
+}
+
+.streakLabel {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-md);
+}
+
+.streakBonus {
+    font-size: var(--text-sm);
+    padding: var(--space-xs) var(--space-md);
+    background: rgba(246, 173, 85, 0.15);
+    color: var(--gold);
+    border-radius: var(--radius-full);
+    display: inline-block;
+}
+
+/* NUR Widget */
+.nurWidget {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+}
+
+.nurHeader {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.nurAvatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--gradient-purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.nurName {
+    font-weight: 600;
+}
+
+.nurStatus {
+    font-size: var(--text-xs);
+    color: var(--green);
+}
+
+.nurMessages {
+    flex: 1;
+    padding: var(--space-md);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.nurMessage {
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(107, 70, 193, 0.1);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+}
+
+.nurInput {
+    padding: var(--space-md);
+    border-top: 1px solid var(--border);
+}
+
+.nurInputField {
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    color: var(--text);
+    font-size: var(--text-sm);
+    outline: none;
+}
+
+.nurInputField:focus {
+    border-color: var(--purple);
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 1400px) {
+    .areasGrid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 1200px) {
+    .layout {
+        grid-template-columns: 1fr 300px;
+    }
+
+    .sidebar {
+        display: none;
+    }
+
+    .areasGrid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .rightPanel {
+        display: none;
+    }
+
+    .statsRow {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .areasGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .statsRow {
+        grid-template-columns: 1fr;
+    }
+
+    .missionBanner {
+        flex-direction: column;
+        text-align: center;
+    }
+}

@@ -3,9 +3,8 @@
 import { useEffect, useLayoutEffect, useState, useRef, Suspense } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { supabaseClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { AIDisclaimer, useAIDisclaimer } from '@/components/legal/AIDisclaimer'
 import './chat.css'
 
 interface Message {
@@ -15,11 +14,6 @@ interface Message {
     timestamp: string
     saved?: boolean
     isStreaming?: boolean
-    metadata?: {
-        sentiment?: string
-        area_detected?: string
-        contains_solution?: boolean
-    }
 }
 
 // Funzione per renderizzare Markdown semplice
@@ -30,17 +24,13 @@ function renderMarkdown(text: string): JSX.Element {
     let listType: 'ul' | 'ol' | null = null
 
     const processInlineFormatting = (line: string): JSX.Element => {
-        // Processa **grassetto**, *corsivo*, `code`
         const parts: (string | JSX.Element)[] = []
         let remaining = line
         let key = 0
 
         while (remaining.length > 0) {
-            // Grassetto **text**
             const boldMatch = remaining.match(/\*\*(.+?)\*\*/)
-            // Corsivo *text*
             const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/)
-            // Code `text`
             const codeMatch = remaining.match(/`(.+?)`/)
 
             const matches = [
@@ -88,16 +78,14 @@ function renderMarkdown(text: string): JSX.Element {
         }
     }
 
-    lines.forEach((line, i) => {
+    lines.forEach((line) => {
         const trimmed = line.trim()
 
-        // Linea vuota
         if (!trimmed) {
             flushList()
             return
         }
 
-        // Citazione > text
         if (trimmed.startsWith('> ')) {
             flushList()
             elements.push(
@@ -108,7 +96,6 @@ function renderMarkdown(text: string): JSX.Element {
             return
         }
 
-        // Lista numerata 1. 2. 3.
         const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
         if (numberedMatch) {
             if (listType !== 'ol') {
@@ -119,7 +106,6 @@ function renderMarkdown(text: string): JSX.Element {
             return
         }
 
-        // Lista puntata - o •
         if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
             if (listType !== 'ul') {
                 flushList()
@@ -129,7 +115,6 @@ function renderMarkdown(text: string): JSX.Element {
             return
         }
 
-        // Heading ### ## #
         if (trimmed.startsWith('### ')) {
             flushList()
             elements.push(<h4 key={elements.length} className="md-h3">{trimmed.substring(4)}</h4>)
@@ -146,7 +131,6 @@ function renderMarkdown(text: string): JSX.Element {
             return
         }
 
-        // Testo normale
         flushList()
         elements.push(<p key={elements.length} className="md-p">{processInlineFormatting(trimmed)}</p>)
     })
@@ -164,9 +148,6 @@ function ChatContent() {
     const [status, setStatus] = useState<'ready' | 'thinking' | 'streaming' | 'error'>('ready')
     const [statusText, setStatusText] = useState('NUR è pronta')
     const [loading, setLoading] = useState(true)
-    const [conversationId, setConversationId] = useState<string | null>(null)
-    const [currentArea, setCurrentArea] = useState<string | null>(null)
-    const [insightsCount, setInsightsCount] = useState(0)
     const chatRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -175,9 +156,6 @@ function ChatContent() {
     // Message limit counter
     const [messageCount, setMessageCount] = useState({ count: 0, limit: 20, remaining: 20 })
     const [limitReached, setLimitReached] = useState(false)
-
-    // AI Disclaimer
-    const { showDisclaimer, acceptDisclaimer } = useAIDisclaimer()
 
     // Carica dati utente e messaggi
     useEffect(() => {
@@ -190,78 +168,26 @@ function ChatContent() {
 
         const loadData = async () => {
             try {
-                // 1. Inizializza utente se necessario
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('id')
+                // Carica ultimi messaggi dalla nuova tabella chat_messages
+                const { data: msgs, error } = await supabaseClient
+                    .from('chat_messages')
+                    .select('*')
                     .eq('clerk_user_id', user.id)
-                    .maybeSingle()
+                    .order('created_at', { ascending: false })
+                    .limit(50)
 
-                if (!profile) {
-                    await fetch('/api/user', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            userId: user.id,
-                            action: 'init',
-                            data: {
-                                email: user.emailAddresses[0]?.emailAddress,
-                                fullName: user.fullName || user.firstName
-                            }
+                if (!error && msgs && msgs.length > 0) {
+                    const sortedMsgs = [...msgs].reverse()
+                    const formattedMessages = sortedMsgs.map(msg => ({
+                        id: msg.id,
+                        content: msg.content,
+                        role: msg.role as 'user' | 'assistant',
+                        timestamp: new Date(msg.created_at).toLocaleTimeString('it-IT', {
+                            hour: '2-digit',
+                            minute: '2-digit'
                         })
-                    })
-                }
-
-                // 2. Carica l'ultima conversazione attiva
-                const { data: conv, error: convError } = await supabase
-                    .from('conversations')
-                    .select('id, title, area_related')
-                    .eq('clerk_user_id', user.id)
-                    .eq('status', 'active')
-                    .order('updated_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle()
-
-                if (convError) {
-                    console.error('Conv load error:', convError)
-                }
-
-                if (conv) {
-                    setConversationId(conv.id)
-                    setCurrentArea(conv.area_related || null)
-
-                    // 3. Carica gli ULTIMI 100 messaggi della conversazione
-                    // Ordiniamo DESC per prendere i più recenti, poi invertiamo per mostrarli cronologicamente
-                    const { data: msgs, error: msgsError } = await supabase
-                        .from('messages')
-                        .select('*')
-                        .eq('conversation_id', conv.id)
-                        .order('created_at', { ascending: false })
-                        .limit(100)
-
-                    if (msgsError) {
-                        console.error('Messages load error:', msgsError)
-                    }
-
-                    // Inverti per ordine cronologico (dal più vecchio al più recente)
-                    const sortedMsgs = msgs ? [...msgs].reverse() : []
-
-                    if (sortedMsgs.length > 0) {
-                        const formattedMessages = sortedMsgs.map(msg => ({
-                            id: msg.id,
-                            content: msg.content,
-                            role: msg.role as 'user' | 'assistant',
-                            timestamp: new Date(msg.created_at).toLocaleTimeString('it-IT', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            }),
-                            metadata: {
-                                sentiment: msg.sentiment,
-                                area_detected: msg.area_type
-                            }
-                        }))
-                        setMessages(formattedMessages)
-                    }
+                    }))
+                    setMessages(formattedMessages)
                 }
             } catch (err) {
                 console.error('Load error:', err)
@@ -271,71 +197,38 @@ function ChatContent() {
         }
 
         loadData()
-
-        // Fetch message count
-        const fetchMessageCount = async () => {
-            try {
-                const res = await fetch('/api/messages/count')
-                if (res.ok) {
-                    const data = await res.json()
-                    setMessageCount(data)
-                    if (data.remaining <= 0) {
-                        setLimitReached(true)
-                    }
-                }
-            } catch (e) {
-                console.log('[CHAT] Could not fetch message count')
-            }
-        }
-        if (user) fetchMessageCount()
     }, [isLoaded, user])
 
-    // Gestisci parametri URL (context da altre pagine)
+    // Gestisci parametri URL
     useEffect(() => {
         const context = searchParams.get('context')
-        const area = searchParams.get('area')
-
         if (context) {
             setInput(context)
         }
-        if (area) {
-            setCurrentArea(area)
-        }
     }, [searchParams])
 
-    // Ref per sapere se è il primo caricamento
     const hasScrolledInitially = useRef(false)
 
-    // Scroll iniziale dopo caricamento - va all'ultimo messaggio
-    // useLayoutEffect per eseguire PRIMA del paint del browser
     useLayoutEffect(() => {
         if (!loading && messages.length > 0 && !hasScrolledInitially.current) {
             hasScrolledInitially.current = true
-
-            // Piccolo timeout per assicurarsi che il DOM sia pronto
             const timer = setTimeout(() => {
                 if (chatRef.current) {
-                    // Scrolla direttamente il container al fondo
                     chatRef.current.scrollTop = chatRef.current.scrollHeight
                 }
             }, 50)
-
             return () => clearTimeout(timer)
         }
     }, [loading, messages.length])
 
-    // Auto-scroll quando arrivano nuovi messaggi (dopo il primo caricamento)
     useEffect(() => {
         if (messages.length === 0 || !hasScrolledInitially.current) return
 
-        // Scroll solo se siamo già vicini al fondo (per non interrompere la lettura)
         if (chatRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = chatRef.current
             const isNearBottom = scrollHeight - scrollTop - clientHeight < 200
 
-            // Scrolla solo se siamo già vicini al fondo o durante streaming
             if (isNearBottom || status === 'streaming') {
-                // Usa scrollTop per scroll più affidabile
                 chatRef.current.scrollTo({
                     top: chatRef.current.scrollHeight,
                     behavior: 'smooth'
@@ -348,33 +241,26 @@ function ChatContent() {
         return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     }
 
-    // Trigger messaggio iniziale quando: caricamento finito, nessun messaggio, utente presente
+    // Trigger messaggio iniziale
     useEffect(() => {
-        // Funzione interna per evitare problemi di closure
         const triggerInitialMessage = async () => {
             if (!user || status !== 'ready') return
 
-            console.log('[CHAT] Triggering NUR initial message...')
             setStatus('thinking')
             setStatusText('NUR sta pensando...')
 
             try {
-                const response = await fetch('/api/ai/stream', {
+                const response = await fetch('/api/nur/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: '__NUR_START_CONVERSATION__',
-                        userId: user.id,
                         history: [],
-                        conversationId: null,
-                        area: null,
                         isInitialMessage: true
                     })
                 })
 
-                if (!response.ok) {
-                    throw new Error('Stream request failed')
-                }
+                if (!response.ok) throw new Error('Request failed')
 
                 setStatus('streaming')
                 setStatusText('NUR sta scrivendo...')
@@ -416,10 +302,6 @@ function ChatContent() {
                                         })
                                     }
 
-                                    if (data.conversationId) {
-                                        setConversationId(data.conversationId)
-                                    }
-
                                     if (data.done) {
                                         setMessages(prev => {
                                             const newMessages = [...prev]
@@ -429,10 +311,6 @@ function ChatContent() {
                                             }
                                             return newMessages
                                         })
-                                    }
-
-                                    if (data.error) {
-                                        throw new Error(data.error)
                                     }
                                 } catch {
                                     // Ignora errori di parsing
@@ -444,38 +322,21 @@ function ChatContent() {
 
                 setStatus('ready')
                 setStatusText('NUR è pronta')
-                console.log('[CHAT] NUR initial message completed')
 
             } catch (error) {
-                console.error('[CHAT] Initial message error:', error)
+                console.error('Initial message error:', error)
                 setStatus('ready')
                 setStatusText('NUR è pronta')
             }
         }
 
-        // Debug dettagliato
-        if (typeof window !== 'undefined') {
-            console.log('[CHAT] Effect check:', {
-                loading,
-                messagesLength: messages.length,
-                hasUser: !!user,
-                userId: user?.id?.substring(0, 10),
-                status,
-                alreadyTriggered: hasTriggeredInitialMessage.current
-            })
-        }
-
         if (!loading && messages.length === 0 && user && !hasTriggeredInitialMessage.current && status === 'ready') {
             hasTriggeredInitialMessage.current = true
-            console.log('[CHAT] ✅ All conditions met! Starting NUR in 800ms...')
-            // Piccolo delay per assicurarsi che tutto sia pronto
             const timer = setTimeout(() => {
-                console.log('[CHAT] Timer fired, calling triggerInitialMessage()')
                 triggerInitialMessage()
             }, 800)
             return () => clearTimeout(timer)
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading, messages.length, user, status])
 
     const sendMessage = async () => {
@@ -488,33 +349,26 @@ function ChatContent() {
             timestamp: getTimestamp()
         }
 
-        // Aggiungi messaggio utente alla UI
         setMessages(prev => [...prev, userMessage])
         setInput('')
         setStatus('thinking')
         setStatusText('NUR sta pensando...')
 
         try {
-            // Prepara la storia recente
             const recentHistory = messages.slice(-10).map(m => ({
                 role: m.role,
                 content: m.content
             }))
 
-            // Chiama l'API di streaming
-            const response = await fetch('/api/ai/stream', {
+            const response = await fetch('/api/nur/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: userContent,
-                    userId: user.id,
-                    history: recentHistory,
-                    conversationId,
-                    area: currentArea
+                    history: recentHistory
                 })
             })
 
-            // Gestisci limite messaggi raggiunto
             if (response.status === 429) {
                 const data = await response.json()
                 setLimitReached(true)
@@ -529,22 +383,17 @@ function ChatContent() {
                 return
             }
 
-            if (!response.ok) {
-                throw new Error('Stream request failed')
-            }
+            if (!response.ok) throw new Error('Request failed')
 
-            // Aggiorna counter
             setMessageCount(prev => ({
                 ...prev,
                 count: prev.count + 1,
                 remaining: Math.max(0, prev.remaining - 1)
             }))
 
-            // Ora che abbiamo risposta, passa a streaming
             setStatus('streaming')
             setStatusText('NUR sta scrivendo...')
 
-            // Crea placeholder per la risposta streaming
             const streamingMessage: Message = {
                 content: '',
                 role: 'assistant',
@@ -572,7 +421,6 @@ function ChatContent() {
 
                                 if (data.text) {
                                     fullContent += data.text
-                                    // Aggiorna il messaggio in streaming
                                     setMessages(prev => {
                                         const newMessages = [...prev]
                                         const lastMsg = newMessages[newMessages.length - 1]
@@ -583,13 +431,7 @@ function ChatContent() {
                                     })
                                 }
 
-                                // Se ricevo un nuovo conversationId, salvalo
-                                if (data.conversationId) {
-                                    setConversationId(data.conversationId)
-                                }
-
                                 if (data.done) {
-                                    // Fine streaming - rimuovi flag isStreaming
                                     setMessages(prev => {
                                         const newMessages = [...prev]
                                         const lastMsg = newMessages[newMessages.length - 1]
@@ -599,12 +441,8 @@ function ChatContent() {
                                         return newMessages
                                     })
                                 }
-
-                                if (data.error) {
-                                    throw new Error(data.error)
-                                }
-                            } catch (e) {
-                                // Ignora errori di parsing
+                            } catch {
+                                // Ignora errori parsing
                             }
                         }
                     }
@@ -616,7 +454,6 @@ function ChatContent() {
 
         } catch (error) {
             console.error('Send error:', error)
-            // Rimuovi messaggio streaming fallito e aggiungi errore
             setMessages(prev => {
                 const newMessages = prev.filter(m => !m.isStreaming)
                 newMessages.push({
@@ -638,7 +475,6 @@ function ChatContent() {
     if (!isLoaded) return null
 
     if (!user) {
-        // Redirect to sign-in
         if (typeof window !== 'undefined') {
             window.location.href = '/sign-in?redirect_url=/chat'
         }
@@ -663,9 +499,6 @@ function ChatContent() {
         <div className="chat-page">
             <div className="bg-gradient"></div>
 
-            {/* AI Disclaimer - mostra solo la prima volta per sessione */}
-            {showDisclaimer && <AIDisclaimer onAccept={acceptDisclaimer} />}
-
             <header className="chat-header">
                 <div className="header-left">
                     <Link href="/" className="back-link">←</Link>
@@ -681,27 +514,11 @@ function ChatContent() {
                     </div>
                 </div>
                 <div className="header-right">
-                    <Link href="/giornale" className="header-btn" title="Giornale">
-                        📰
-                    </Link>
                     <Link href="/la-mia-vita" className="header-btn" title="La Mia Vita">
                         🌌
                     </Link>
                 </div>
             </header>
-
-            {currentArea && (
-                <div className="area-context-bar">
-                    <span className="area-label">Parlando di:</span>
-                    <span className="area-tag">{currentArea}</span>
-                    <button
-                        className="clear-area"
-                        onClick={() => setCurrentArea(null)}
-                    >
-                        ✕
-                    </button>
-                </div>
-            )}
 
             <main className="chat-main" ref={chatRef}>
                 {loading ? (
@@ -743,11 +560,6 @@ function ChatContent() {
                                     {!msg.isStreaming && (
                                         <div className="message-meta">
                                             <span className="message-time">{msg.timestamp}</span>
-                                            {msg.metadata?.area_detected && (
-                                                <span className="message-area">
-                                                    {msg.metadata.area_detected}
-                                                </span>
-                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -758,7 +570,6 @@ function ChatContent() {
                                 )}
                             </div>
                         ))}
-                        {/* Indicatore di thinking - mostrato mentre NUR pensa */}
                         {status === 'thinking' && (
                             <div className="message assistant">
                                 <div className="message-avatar">💜</div>
@@ -771,14 +582,12 @@ function ChatContent() {
                                 </div>
                             </div>
                         )}
-                        {/* Elemento invisibile per scroll */}
                         <div ref={messagesEndRef} />
                     </div>
                 )}
             </main>
 
             <footer className="chat-footer">
-                {/* Message counter */}
                 <div className="message-counter">
                     <span className={messageCount.remaining <= 5 ? 'warning' : ''}>
                         {messageCount.remaining}/{messageCount.limit} messaggi oggi
@@ -788,7 +597,6 @@ function ChatContent() {
                     )}
                 </div>
 
-                {/* Limit reached banner */}
                 {limitReached && (
                     <div className="limit-banner">
                         <p>🛑 Hai usato tutti i 20 messaggi di oggi!</p>
@@ -796,11 +604,6 @@ function ChatContent() {
                     </div>
                 )}
 
-                {insightsCount > 0 && (
-                    <div className="insights-indicator">
-                        💡 {insightsCount} cose imparate su di te
-                    </div>
-                )}
                 <div className="input-container">
                     <textarea
                         ref={inputRef}
@@ -808,7 +611,6 @@ function ChatContent() {
                         value={input}
                         onChange={(e) => {
                             setInput(e.target.value)
-                            // Auto-resize textarea
                             e.target.style.height = 'auto'
                             e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'
                         }}
@@ -837,7 +639,6 @@ function ChatContent() {
                 </div>
             </footer>
 
-            {/* BOTTOM NAV - SOLO 3 VOCI */}
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item">
                     <span>🏠</span>
@@ -847,9 +648,9 @@ function ChatContent() {
                     <span>💬</span>
                     <span>Chat</span>
                 </Link>
-                <Link href="/giornale" className="nav-item">
-                    <span>📚</span>
-                    <span>Scrivania</span>
+                <Link href="/goals" className="nav-item">
+                    <span>🎯</span>
+                    <span>Goals</span>
                 </Link>
             </nav>
         </div>

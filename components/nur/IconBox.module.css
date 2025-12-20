@@ -1,0 +1,68 @@
+.iconBox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+}
+
+/* Sizes */
+.size-sm {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    border-radius: var(--radius-sm);
+}
+
+.size-md {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+}
+
+.size-lg {
+    width: 64px;
+    height: 64px;
+    font-size: 32px;
+    border-radius: var(--radius-lg);
+}
+
+.size-xl {
+    width: 80px;
+    height: 80px;
+    font-size: 40px;
+    border-radius: var(--radius-xl);
+}
+
+/* Colors */
+.color-purple {
+    background: linear-gradient(135deg, rgba(107, 70, 193, 0.3), rgba(107, 70, 193, 0.1));
+}
+
+.color-gold {
+    background: linear-gradient(135deg, rgba(246, 173, 85, 0.3), rgba(246, 173, 85, 0.1));
+}
+
+.color-green {
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.3), rgba(72, 187, 120, 0.1));
+}
+
+.color-red {
+    background: linear-gradient(135deg, rgba(245, 101, 101, 0.3), rgba(245, 101, 101, 0.1));
+}
+
+.color-blue {
+    background: linear-gradient(135deg, rgba(66, 153, 225, 0.3), rgba(66, 153, 225, 0.1));
+}
+
+.color-pink {
+    background: linear-gradient(135deg, rgba(237, 100, 166, 0.3), rgba(237, 100, 166, 0.1));
+}
+
+.color-cyan {
+    background: linear-gradient(135deg, rgba(11, 197, 234, 0.3), rgba(11, 197, 234, 0.1));
+}
+
+.color-muted {
+    background: rgba(255, 255, 255, 0.05);
+}

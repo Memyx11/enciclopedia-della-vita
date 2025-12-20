@@ -1,378 +1,844 @@
 /**
- * NUR TOOLS SYSTEM
- * Basato sul Master Document - Parte 8
+ * NUR: LIFE RPG - Tool System
+ * Gestione dei tool che NUR può usare
  * Formato: [TOOL:nome]{json}[/TOOL]
  */
 
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase/client'
+import {
+    MemoryType, GoalType, AreaSlug, MaterialRarity, TestType,
+    AREA_SLUGS, SKILL_LEVELS_ORDER
+} from '@/lib/supabase/types'
+import { awardXp, awardGoalXp, awardTestXp } from '@/lib/gamification/xp'
+import { checkAllAchievements } from '@/lib/gamification/achievements'
 
-interface ToolResult {
-  success: boolean
-  message: string
-  data?: any
+// ============================================
+// TYPES
+// ============================================
+
+export interface ToolResult {
+    success: boolean
+    message: string
+    data?: any
 }
 
-async function saveInsight(userId: string, params: {
-  type: string
-  content: string
-  importance?: number
+export interface ToolCall {
+    tool: string
+    params: Record<string, any>
+}
+
+// ============================================
+// TOOL IMPLEMENTATIONS
+// ============================================
+
+/**
+ * Salva una memoria nella tabella nur_memory
+ */
+async function saveMemory(userId: string, params: {
+    type: MemoryType
+    content: string
+    importance?: number
+    area?: AreaSlug
+    goal_id?: string
 }): Promise<ToolResult> {
-  const { error } = await supabase
-    .from('user_insights')
-    .insert({
-      clerk_user_id: userId,
-      category: params.type,
-      content: params.content,
-      importance: params.importance || 7,
-      used_for_mission: false
-    })
+    try {
+        // Get area_id if area slug provided
+        let areaId: string | null = null
+        if (params.area) {
+            const { data: area } = await supabaseAdmin
+                .from('life_areas')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('slug', params.area)
+                .single()
+            areaId = area?.id || null
+        }
 
-  if (error) {
-    console.error('[TOOL:save_insight] Error:', error)
-    return { success: false, message: error.message }
-  }
-  console.log('[TOOL:save_insight] Saved:', params.type, '-', params.content)
-  return { success: true, message: 'Insight salvato' }
+        const { error } = await supabaseAdmin
+            .from('nur_memory')
+            .insert({
+                clerk_user_id: userId,
+                type: params.type,
+                content: params.content,
+                importance: params.importance || 5,
+                area_id: areaId,
+                related_goal_id: params.goal_id || null,
+                is_current: true
+            })
+
+        if (error) throw error
+
+        // Update narrative memory in profile (compact summary)
+        await updateNarrativeMemory(userId)
+
+        console.log('[TOOL:save_memory]', params.type, '-', params.content.substring(0, 50))
+        return { success: true, message: 'Memoria salvata' }
+    } catch (error: any) {
+        console.error('[TOOL:save_memory] Error:', error)
+        return { success: false, message: error.message }
+    }
 }
 
+/**
+ * Aggiorna il profilo utente
+ */
 async function updateProfile(userId: string, params: {
-  life_phase?: string
-  situation?: string
-  mindset?: string
-  skill?: string
-  name?: string
+    field: 'full_name' | 'birth_date' | 'city' | 'bio' | 'wake_time' | 'sleep_time'
+    value: string
 }): Promise<ToolResult> {
-  const { data: existing } = await supabase
-    .from('user_profile_data')
-    .select('*')
-    .eq('clerk_user_id', userId)
-    .single()
+    try {
+        const updateData: Record<string, any> = {
+            [params.field]: params.value,
+            updated_at: new Date().toISOString()
+        }
 
-  const updates: any = {}
-  if (params.life_phase) updates.life_phase = params.life_phase
-  if (params.mindset) updates.mindset = params.mindset
-  if (params.name) updates.name = params.name
-  
-  if (params.situation) {
-    const currentSituation = existing?.situation || []
-    if (!currentSituation.includes(params.situation)) {
-      updates.situation = [...currentSituation, params.situation]
+        const { error } = await supabaseAdmin
+            .from('profiles')
+            .update(updateData)
+            .eq('clerk_user_id', userId)
+
+        if (error) throw error
+
+        console.log('[TOOL:update_profile]', params.field, '=', params.value)
+        return { success: true, message: 'Profilo aggiornato' }
+    } catch (error: any) {
+        console.error('[TOOL:update_profile] Error:', error)
+        return { success: false, message: error.message }
     }
-  }
-  
-  if (params.skill) {
-    const currentSkills = existing?.skills || []
-    if (!currentSkills.includes(params.skill)) {
-      updates.skills = [...currentSkills, params.skill]
-    }
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return { success: true, message: 'Nessun aggiornamento' }
-  }
-
-  const { error } = await supabase
-    .from('user_profile_data')
-    .upsert({ clerk_user_id: userId, ...updates, updated_at: new Date().toISOString() })
-
-  if (error) return { success: false, message: error.message }
-  console.log('[TOOL:update_profile] Updated:', updates)
-  return { success: true, message: 'Profilo aggiornato', data: updates }
 }
 
-async function completeQuest(userId: string, params: { quest_id: string }): Promise<ToolResult> {
-  console.log('[TOOL:complete_quest] Starting for quest:', params.quest_id)
-
-  // 1. Carica la quest
-  const { data: quest, error: questError } = await supabase
-    .from('game_quests')
-    .select('xp_reward, title')
-    .eq('id', params.quest_id)
-    .single()
-
-  if (questError || !quest) {
-    console.error('[TOOL:complete_quest] Quest not found:', params.quest_id, questError)
-    return { success: false, message: 'Quest non trovata: ' + params.quest_id }
-  }
-
-  // 2. Verifica che non sia gia completata
-  const { data: progress } = await supabase
-    .from('user_quest_progress')
-    .select('status')
-    .eq('clerk_user_id', userId)
-    .eq('quest_id', params.quest_id)
-    .single()
-
-  if (progress?.status === 'completed') {
-    console.log('[TOOL:complete_quest] Already completed:', params.quest_id)
-    return { success: false, message: 'Quest gia completata' }
-  }
-
-  // 3. Completa la quest
-  const { error: updateError } = await supabase
-    .from('user_quest_progress')
-    .update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      xp_awarded: quest.xp_reward,
-      progress_percent: 100
-    })
-    .eq('clerk_user_id', userId)
-    .eq('quest_id', params.quest_id)
-
-  if (updateError) {
-    console.error('[TOOL:complete_quest] Update failed:', updateError)
-    return { success: false, message: 'Errore aggiornamento: ' + updateError.message }
-  }
-
-  // 4. Aggiungi XP - usa RPC con parametri corretti, fallback se errore
-  const { data: xpResult, error: xpError } = await supabase.rpc('add_xp', {
-    p_clerk_user_id: userId,
-    p_amount: quest.xp_reward,
-    p_reason: 'Quest: ' + quest.title,
-    p_objective_id: null
-  })
-
-  if (xpError) {
-    console.log('[TOOL:complete_quest] add_xp RPC failed:', xpError.message)
-    // Fallback: aggiorna XP direttamente
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('xp, level, xp_to_next_level')
-      .eq('clerk_user_id', userId)
-      .single()
-
-    const newXp = (profile?.xp || 0) + quest.xp_reward
-    let newLevel = profile?.level || 1
-    let xpForLevel = profile?.xp_to_next_level || 100
-    let remainingXp = newXp
-
-    // Check level up
-    while (remainingXp >= xpForLevel) {
-      remainingXp -= xpForLevel
-      newLevel++
-      xpForLevel = Math.floor(100 * Math.pow(newLevel, 1.5))
-    }
-
-    await supabase
-      .from('profiles')
-      .update({
-        xp: remainingXp,
-        level: newLevel,
-        xp_to_next_level: xpForLevel
-      })
-      .eq('clerk_user_id', userId)
-
-    console.log('[TOOL:complete_quest] Fallback XP update: +', quest.xp_reward, 'XP, level:', newLevel)
-  } else {
-    console.log('[TOOL:complete_quest] XP added via RPC:', xpResult)
-  }
-
-  // 5. Sblocca prossime quest
-  const { error: unlockError } = await supabase.rpc('unlock_next_quests', {
-    p_clerk_user_id: userId,
-    p_completed_quest_id: params.quest_id
-  })
-
-  if (unlockError) {
-    console.log('[TOOL:complete_quest] unlock_next_quests failed:', unlockError.message)
-    // Fallback: sblocca manualmente la prossima quest
-    const { data: nextQuest } = await supabase
-      .from('game_quests')
-      .select('id')
-      .eq('unlock_after', params.quest_id)
-      .single()
-
-    if (nextQuest) {
-      await supabase
-        .from('user_quest_progress')
-        .update({ status: 'available' })
-        .eq('clerk_user_id', userId)
-        .eq('quest_id', nextQuest.id)
-        .eq('status', 'locked')
-      console.log('[TOOL:complete_quest] Manually unlocked:', nextQuest.id)
-    }
-  }
-
-  console.log('[TOOL:complete_quest] SUCCESS:', params.quest_id, '+', quest.xp_reward, 'XP')
-  return { success: true, message: 'Quest completata! +' + quest.xp_reward + ' XP', data: { xp: quest.xp_reward } }
-}
-
-async function awardXp(userId: string, params: { amount: number, reason: string }): Promise<ToolResult> {
-  const { error } = await supabase.rpc('add_xp', {
-    p_clerk_user_id: userId,
-    p_amount: params.amount,
-    p_reason: params.reason,
-    p_objective_id: null
-  })
-  if (error) {
-    console.log('[TOOL:award_xp] RPC failed, using fallback:', error.message)
-    // Fallback diretto
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('xp')
-      .eq('clerk_user_id', userId)
-      .single()
-
-    await supabase
-      .from('profiles')
-      .update({ xp: (profile?.xp || 0) + params.amount })
-      .eq('clerk_user_id', userId)
-  }
-  return { success: true, message: '+' + params.amount + ' XP' }
-}
-
-async function createMission(userId: string, params: {
-  title: string, description: string, area: string, duration_days?: number
+/**
+ * Crea un nuovo obiettivo
+ */
+async function createGoal(userId: string, params: {
+    title: string
+    type: GoalType
+    area: AreaSlug
+    description?: string
+    is_primary?: boolean
+    xp_reward?: number
 }): Promise<ToolResult> {
-  const { data, error } = await supabase.from('user_missions').insert({
-    clerk_user_id: userId, title: params.title, description: params.description,
-    area: params.area, status: 'active', duration_days: params.duration_days || 14,
-    start_date: new Date().toISOString().split('T')[0], progress: 0
-  }).select().single()
-  if (error) return { success: false, message: error.message }
-  return { success: true, message: 'Missione creata!', data }
+    try {
+        // Get area_id
+        const { data: area } = await supabaseAdmin
+            .from('life_areas')
+            .select('id')
+            .eq('clerk_user_id', userId)
+            .eq('slug', params.area)
+            .single()
+
+        if (!area) {
+            return { success: false, message: `Area '${params.area}' non trovata` }
+        }
+
+        // Default XP based on type
+        const xpMap = { obiettivo: 50, boss: 200, sogno: 500 }
+        const xpReward = params.xp_reward || xpMap[params.type]
+
+        const { data: goal, error } = await supabaseAdmin
+            .from('goals')
+            .insert({
+                clerk_user_id: userId,
+                area_id: area.id,
+                title: params.title,
+                description: params.description || null,
+                type: params.type,
+                is_primary: params.is_primary || false,
+                xp_reward: xpReward,
+                status: 'active',
+                progress: 0
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+
+        // If primary, update area
+        if (params.is_primary) {
+            await supabaseAdmin
+                .from('life_areas')
+                .update({ has_primary_goal: true })
+                .eq('id', area.id)
+        }
+
+        console.log('[TOOL:create_goal]', params.title, '(', params.type, ')')
+        return { success: true, message: 'Obiettivo creato!', data: goal }
+    } catch (error: any) {
+        console.error('[TOOL:create_goal] Error:', error)
+        return { success: false, message: error.message }
+    }
 }
 
-async function addRoutineTask(userId: string, params: {
-  mission_id?: string, title: string, difficulty: string, time?: string, frequency?: string
+/**
+ * Completa un obiettivo
+ */
+async function completeGoal(userId: string, params: {
+    goal_id: string
 }): Promise<ToolResult> {
-  const xpMap: Record<string, number> = { facile: 30, media: 60, difficile: 100, epica: 200 }
-  const { error } = await supabase.from('mission_tasks').insert({
-    clerk_user_id: userId, mission_id: params.mission_id, title: params.title,
-    difficulty: params.difficulty, xp_reward: xpMap[params.difficulty] || 60,
-    scheduled_time: params.time, frequency: params.frequency || 'daily'
-  })
-  if (error) return { success: false, message: error.message }
-  return { success: true, message: 'Task aggiunta (+' + (xpMap[params.difficulty] || 60) + ' XP/giorno)' }
+    try {
+        // Use SQL function for atomicity
+        const { data, error } = await supabaseAdmin
+            .rpc('complete_goal', { p_goal_id: params.goal_id })
+
+        if (error) throw error
+
+        // Check for achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:complete_goal]', params.goal_id)
+        return { success: true, message: 'Obiettivo completato!' }
+    } catch (error: any) {
+        console.error('[TOOL:complete_goal] Error:', error)
+        return { success: false, message: error.message }
+    }
 }
 
-async function webSearch(userId: string, params: { query: string }): Promise<ToolResult> {
-  console.log('[TOOL:web_search] Searching:', params.query)
+/**
+ * Crea un nuovo task
+ */
+async function createTask(userId: string, params: {
+    title: string
+    goal_id?: string
+    is_boss_task?: boolean
+    scheduled_date?: string
+    description?: string
+    xp_reward?: number
+}): Promise<ToolResult> {
+    try {
+        // Check if there's already a boss task for today
+        if (params.is_boss_task) {
+            const today = new Date().toISOString().split('T')[0]
+            const { data: existingBoss } = await supabaseAdmin
+                .from('tasks')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('scheduled_date', today)
+                .eq('is_boss_task', true)
+                .single()
 
-  try {
-    // Usa Serper API per ricerca Google (economica e veloce)
-    const serperKey = process.env.SERPER_API_KEY
+            if (existingBoss) {
+                return { success: false, message: 'Hai già un Boss Task per oggi!' }
+            }
+        }
 
-    if (!serperKey) {
-      console.log('[TOOL:web_search] No SERPER_API_KEY, using fallback')
-      return {
-        success: false,
-        message: 'Ricerca web non configurata. Posso rispondere solo con le mie conoscenze.'
-      }
+        const { data: task, error } = await supabaseAdmin
+            .from('tasks')
+            .insert({
+                clerk_user_id: userId,
+                goal_id: params.goal_id || null,
+                title: params.title,
+                description: params.description || null,
+                is_boss_task: params.is_boss_task || false,
+                scheduled_date: params.scheduled_date || new Date().toISOString().split('T')[0],
+                xp_reward: params.xp_reward || (params.is_boss_task ? 100 : 10),
+                status: 'pending'
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+
+        console.log('[TOOL:create_task]', params.title, params.is_boss_task ? '(BOSS)' : '')
+        return { success: true, message: 'Task creato!', data: task }
+    } catch (error: any) {
+        console.error('[TOOL:create_task] Error:', error)
+        return { success: false, message: error.message }
     }
+}
 
-    const response = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': serperKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        q: params.query,
-        gl: 'it',
-        hl: 'it',
-        num: 5
-      })
-    })
+/**
+ * Completa un task
+ */
+async function completeTask(userId: string, params: {
+    task_id: string
+}): Promise<ToolResult> {
+    try {
+        // Get task info
+        const { data: task, error: fetchError } = await supabaseAdmin
+            .from('tasks')
+            .select('*, profiles(streak_days)')
+            .eq('id', params.task_id)
+            .single()
 
-    if (!response.ok) {
-      throw new Error('Search API error: ' + response.status)
+        if (fetchError || !task) {
+            return { success: false, message: 'Task non trovato' }
+        }
+
+        if (task.status === 'completed') {
+            return { success: false, message: 'Task già completato' }
+        }
+
+        // Mark as completed
+        const { error: updateError } = await supabaseAdmin
+            .from('tasks')
+            .update({
+                status: 'completed',
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', params.task_id)
+
+        if (updateError) throw updateError
+
+        // Award XP
+        const streakDays = (task.profiles as any)?.streak_days || 0
+        await awardXp(
+            userId,
+            task.xp_reward,
+            task.is_boss_task ? 'boss_task_completed' : 'task_completed',
+            `Task: ${task.title}`
+        )
+
+        // Update goal progress if linked
+        if (task.goal_id) {
+            await updateGoalProgress(task.goal_id)
+        }
+
+        // Check achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:complete_task]', task.title, '+', task.xp_reward, 'XP')
+        return { success: true, message: `Task completato! +${task.xp_reward} XP` }
+    } catch (error: any) {
+        console.error('[TOOL:complete_task] Error:', error)
+        return { success: false, message: error.message }
     }
+}
 
-    const data = await response.json()
+/**
+ * Assegna XP manualmente
+ */
+async function awardXpTool(userId: string, params: {
+    amount: number
+    reason: string
+}): Promise<ToolResult> {
+    try {
+        const result = await awardXp(userId, params.amount, 'xp_gained', params.reason)
 
-    // Estrai risultati rilevanti
-    const results: string[] = []
+        if (!result.success) {
+            return { success: false, message: result.error || 'Errore' }
+        }
 
-    // Answer box (se presente)
-    if (data.answerBox?.answer) {
-      results.push('📌 ' + data.answerBox.answer)
+        const levelMsg = result.leveledUp
+            ? ` Level Up! Ora sei livello ${result.newLevel} (${result.newTitle})`
+            : ''
+
+        console.log('[TOOL:award_xp]', '+', params.amount, 'XP:', params.reason)
+        return { success: true, message: `+${params.amount} XP!${levelMsg}`, data: result }
+    } catch (error: any) {
+        console.error('[TOOL:award_xp] Error:', error)
+        return { success: false, message: error.message }
     }
+}
 
-    // Knowledge graph (se presente)
-    if (data.knowledgeGraph?.description) {
-      results.push('📚 ' + data.knowledgeGraph.description)
+/**
+ * Aggiunge una skill all'utente
+ */
+async function addSkill(userId: string, params: {
+    name: string
+    description?: string
+    area?: AreaSlug
+}): Promise<ToolResult> {
+    try {
+        // Check if skill already exists
+        const { data: existing } = await supabaseAdmin
+            .from('skills')
+            .select('id')
+            .eq('clerk_user_id', userId)
+            .eq('name', params.name)
+            .single()
+
+        if (existing) {
+            return { success: false, message: `Hai già la skill '${params.name}'` }
+        }
+
+        // Get area_id if provided
+        let areaId: string | null = null
+        if (params.area) {
+            const { data: area } = await supabaseAdmin
+                .from('life_areas')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('slug', params.area)
+                .single()
+            areaId = area?.id || null
+        }
+
+        const { data: skill, error } = await supabaseAdmin
+            .from('skills')
+            .insert({
+                clerk_user_id: userId,
+                name: params.name,
+                description: params.description || null,
+                area_id: areaId,
+                level: 'base',
+                progress: 0
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+
+        // Check achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:add_skill]', params.name)
+        return { success: true, message: `Nuova skill: ${params.name}!`, data: skill }
+    } catch (error: any) {
+        console.error('[TOOL:add_skill] Error:', error)
+        return { success: false, message: error.message }
     }
+}
 
-    // Organic results
-    if (data.organic) {
-      data.organic.slice(0, 3).forEach((r: any) => {
-        results.push(`• ${r.title}: ${r.snippet}`)
-      })
+/**
+ * Aumenta il livello di una skill
+ */
+async function levelUpSkill(userId: string, params: {
+    skill_id: string
+}): Promise<ToolResult> {
+    try {
+        const { data: skill, error: fetchError } = await supabaseAdmin
+            .from('skills')
+            .select('*')
+            .eq('id', params.skill_id)
+            .single()
+
+        if (fetchError || !skill) {
+            return { success: false, message: 'Skill non trovata' }
+        }
+
+        const currentIndex = SKILL_LEVELS_ORDER.indexOf(skill.level)
+        if (currentIndex >= SKILL_LEVELS_ORDER.length - 1) {
+            return { success: false, message: 'Skill già al livello massimo!' }
+        }
+
+        const nextLevel = SKILL_LEVELS_ORDER[currentIndex + 1]
+
+        const { error: updateError } = await supabaseAdmin
+            .from('skills')
+            .update({ level: nextLevel, progress: 0 })
+            .eq('id', params.skill_id)
+
+        if (updateError) throw updateError
+
+        // Award XP for leveling up
+        await awardXp(userId, 25, 'skill_leveled', `Skill ${skill.name} → ${nextLevel}`)
+
+        // Check achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:level_up_skill]', skill.name, '->', nextLevel)
+        return { success: true, message: `${skill.name} è ora ${nextLevel}!` }
+    } catch (error: any) {
+        console.error('[TOOL:level_up_skill] Error:', error)
+        return { success: false, message: error.message }
     }
+}
 
-    const summary = results.join('\n\n')
-    console.log('[TOOL:web_search] Found', results.length, 'results')
+/**
+ * Aggiunge un materiale all'inventario
+ */
+async function addMaterial(userId: string, params: {
+    name: string
+    description?: string
+    rarity?: MaterialRarity
+    area?: AreaSlug
+}): Promise<ToolResult> {
+    try {
+        // Get area_id if provided
+        let areaId: string | null = null
+        if (params.area) {
+            const { data: area } = await supabaseAdmin
+                .from('life_areas')
+                .select('id')
+                .eq('clerk_user_id', userId)
+                .eq('slug', params.area)
+                .single()
+            areaId = area?.id || null
+        }
+
+        const rarity = params.rarity || 'comune'
+
+        const { data: material, error } = await supabaseAdmin
+            .from('materials')
+            .insert({
+                clerk_user_id: userId,
+                name: params.name,
+                description: params.description || null,
+                rarity,
+                area_id: areaId,
+                is_obtained: true,
+                obtained_at: new Date().toISOString()
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+
+        // Award XP based on rarity
+        const xpMap: Record<MaterialRarity, number> = {
+            comune: 5, non_comune: 10, raro: 25, epico: 50, leggendario: 100
+        }
+        await awardXp(userId, xpMap[rarity], 'material_obtained', `Materiale: ${params.name}`)
+
+        // Check achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:add_material]', params.name, `(${rarity})`)
+        return { success: true, message: `Ottenuto: ${params.name} (${rarity})!`, data: material }
+    } catch (error: any) {
+        console.error('[TOOL:add_material] Error:', error)
+        return { success: false, message: error.message }
+    }
+}
+
+/**
+ * Crea una prova per l'utente (Sistema Prove)
+ */
+async function createTest(userId: string, params: {
+    title: string
+    description: string
+    type: TestType
+    verifies: string
+    due_date?: string
+    goal_id?: string
+    skill_id?: string
+}): Promise<ToolResult> {
+    try {
+        const { data: test, error } = await supabaseAdmin
+            .from('user_tests')
+            .insert({
+                clerk_user_id: userId,
+                title: params.title,
+                description: params.description,
+                type: params.type,
+                verifies: params.verifies,
+                related_goal_id: params.goal_id || null,
+                related_skill_id: params.skill_id || null,
+                due_date: params.due_date || null,
+                status: 'pending'
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+
+        console.log('[TOOL:create_test]', params.title, `(${params.type})`)
+        return { success: true, message: `Prova creata: ${params.title}`, data: test }
+    } catch (error: any) {
+        console.error('[TOOL:create_test] Error:', error)
+        return { success: false, message: error.message }
+    }
+}
+
+/**
+ * Verifica il risultato di una prova
+ */
+async function verifyTest(userId: string, params: {
+    test_id: string
+    passed: boolean
+    evaluation: string
+}): Promise<ToolResult> {
+    try {
+        const { data: test, error: fetchError } = await supabaseAdmin
+            .from('user_tests')
+            .select('*')
+            .eq('id', params.test_id)
+            .single()
+
+        if (fetchError || !test) {
+            return { success: false, message: 'Prova non trovata' }
+        }
+
+        const { error: updateError } = await supabaseAdmin
+            .from('user_tests')
+            .update({
+                status: params.passed ? 'passed' : 'failed',
+                nur_evaluation: params.evaluation,
+                completed_at: new Date().toISOString()
+            })
+            .eq('id', params.test_id)
+
+        if (updateError) throw updateError
+
+        // Award XP if passed
+        if (params.passed) {
+            await awardTestXp(userId, false)
+        }
+
+        // Log activity
+        await supabaseAdmin.from('activity_log').insert({
+            clerk_user_id: userId,
+            activity_type: params.passed ? 'test_passed' : 'test_failed',
+            description: `Prova: ${test.title}`
+        })
+
+        // Check achievements
+        await checkAllAchievements(userId)
+
+        console.log('[TOOL:verify_test]', test.title, params.passed ? 'PASSATO' : 'FALLITO')
+        return {
+            success: true,
+            message: params.passed ? 'Prova superata! 🎉' : 'Prova non superata.',
+            data: { passed: params.passed }
+        }
+    } catch (error: any) {
+        console.error('[TOOL:verify_test] Error:', error)
+        return { success: false, message: error.message }
+    }
+}
+
+/**
+ * Ricerca web tramite Serper API
+ */
+async function webSearch(userId: string, params: {
+    query: string
+}): Promise<ToolResult> {
+    console.log('[TOOL:web_search]', params.query)
+
+    try {
+        const serperKey = process.env.SERPER_API_KEY
+
+        if (!serperKey) {
+            return {
+                success: false,
+                message: 'Ricerca web non configurata.'
+            }
+        }
+
+        const response = await fetch('https://google.serper.dev/search', {
+            method: 'POST',
+            headers: {
+                'X-API-KEY': serperKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                q: params.query,
+                gl: 'it',
+                hl: 'it',
+                num: 5
+            })
+        })
+
+        if (!response.ok) {
+            throw new Error('Search API error: ' + response.status)
+        }
+
+        const data = await response.json()
+        const results: string[] = []
+
+        if (data.answerBox?.answer) {
+            results.push('📌 ' + data.answerBox.answer)
+        }
+
+        if (data.knowledgeGraph?.description) {
+            results.push('📚 ' + data.knowledgeGraph.description)
+        }
+
+        if (data.organic) {
+            data.organic.slice(0, 3).forEach((r: any) => {
+                results.push(`• ${r.title}: ${r.snippet}`)
+            })
+        }
+
+        return {
+            success: true,
+            message: 'Ricerca completata',
+            data: { query: params.query, results: results.join('\n\n') }
+        }
+    } catch (error: any) {
+        console.error('[TOOL:web_search] Error:', error)
+        return { success: false, message: 'Errore ricerca: ' + error.message }
+    }
+}
+
+/**
+ * Query al NUR Brain (ChromaDB) - placeholder per integrazione futura
+ */
+async function queryBrain(userId: string, params: {
+    query: string
+    context?: string
+}): Promise<ToolResult> {
+    console.log('[TOOL:query_brain]', params.query)
+
+    // TODO: Integrate with ChromaDB
+    // Per ora ritorna un placeholder
 
     return {
-      success: true,
-      message: 'Ricerca completata',
-      data: { query: params.query, results: summary }
+        success: true,
+        message: 'Brain query eseguita',
+        data: {
+            query: params.query,
+            results: 'ChromaDB integration pending - using local memory for now.'
+        }
     }
-  } catch (error: any) {
-    console.error('[TOOL:web_search] Error:', error.message)
-    return { success: false, message: 'Errore ricerca: ' + error.message }
-  }
 }
 
-export function parseToolCalls(text: string): Array<{tool: string, params: any}> {
-  const regex = /\[TOOL:(\w+)\]([\s\S]*?)\[\/TOOL\]/g
-  const calls: Array<{tool: string, params: any}> = []
-  let match
-  while ((match = regex.exec(text)) !== null) {
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Aggiorna il progresso di un goal basato sui task completati
+ */
+async function updateGoalProgress(goalId: string): Promise<void> {
     try {
-      calls.push({ tool: match[1], params: JSON.parse(match[2].trim()) })
-    } catch (e) {
-      console.error('[TOOL PARSER] Invalid JSON:', match[1])
+        const { data: tasks } = await supabaseAdmin
+            .from('tasks')
+            .select('status')
+            .eq('goal_id', goalId)
+
+        if (!tasks || tasks.length === 0) return
+
+        const completed = tasks.filter(t => t.status === 'completed').length
+        const progress = Math.floor((completed / tasks.length) * 100)
+
+        await supabaseAdmin
+            .from('goals')
+            .update({ progress })
+            .eq('id', goalId)
+    } catch (error) {
+        console.error('Error updating goal progress:', error)
     }
-  }
-  return calls
 }
 
-export async function executeToolCalls(userId: string, toolCalls: Array<{tool: string, params: any}>): Promise<ToolResult[]> {
-  console.log('[TOOLS] Executing', toolCalls.length, 'tools for user', userId)
-  const results: ToolResult[] = []
+/**
+ * Aggiorna la memoria narrativa nel profilo (sommario compatto)
+ */
+async function updateNarrativeMemory(userId: string): Promise<void> {
+    try {
+        // Get top memories by importance
+        const { data: memories } = await supabaseAdmin
+            .from('nur_memory')
+            .select('type, content')
+            .eq('clerk_user_id', userId)
+            .eq('is_current', true)
+            .order('importance', { ascending: false })
+            .limit(10)
 
-  for (const call of toolCalls) {
-    console.log('[TOOLS] Executing:', call.tool, JSON.stringify(call.params))
-    let result: ToolResult
+        if (!memories || memories.length === 0) return
 
-    switch (call.tool) {
-      case 'save_insight':
-        result = await saveInsight(userId, call.params)
-        break
-      case 'update_profile':
-        result = await updateProfile(userId, call.params)
-        break
-      case 'complete_quest':
-        console.log('[TOOLS] === COMPLETING QUEST ===', call.params.quest_id)
-        result = await completeQuest(userId, call.params)
-        console.log('[TOOLS] Quest completion result:', result.success, result.message)
-        break
-      case 'award_xp':
-        result = await awardXp(userId, call.params)
-        break
-      case 'create_mission':
-        result = await createMission(userId, call.params)
-        break
-      case 'add_routine_task':
-        result = await addRoutineTask(userId, call.params)
-        break
-      case 'web_search':
-        result = await webSearch(userId, call.params)
-        break
-      default:
-        result = { success: false, message: 'Tool sconosciuto: ' + call.tool }
+        // Build narrative summary
+        const facts = memories.filter(m => m.type === 'fact').map(m => m.content)
+        const struggles = memories.filter(m => m.type === 'struggle').map(m => m.content)
+        const achievements = memories.filter(m => m.type === 'achievement').map(m => m.content)
+
+        let narrative = ''
+        if (facts.length > 0) narrative += `Fatti: ${facts.join('; ')}. `
+        if (struggles.length > 0) narrative += `Sfide: ${struggles.join('; ')}. `
+        if (achievements.length > 0) narrative += `Risultati: ${achievements.join('; ')}.`
+
+        // Update profile
+        await supabaseAdmin
+            .from('profiles')
+            .update({ nur_narrative_memory: narrative.trim() })
+            .eq('clerk_user_id', userId)
+    } catch (error) {
+        console.error('Error updating narrative memory:', error)
     }
-
-    console.log('[TOOLS] Result:', call.tool, '->', result.success ? 'OK' : 'FAIL', result.message)
-    results.push(result)
-  }
-
-  return results
 }
 
+// ============================================
+// PARSING & EXECUTION
+// ============================================
+
+/**
+ * Estrae le chiamate tool dal testo della risposta NUR
+ */
+export function parseToolCalls(text: string): ToolCall[] {
+    const regex = /\[TOOL:(\w+)\]([\s\S]*?)\[\/TOOL\]/g
+    const calls: ToolCall[] = []
+    let match
+
+    while ((match = regex.exec(text)) !== null) {
+        try {
+            const params = JSON.parse(match[2].trim())
+            calls.push({ tool: match[1], params })
+        } catch (e) {
+            console.error('[TOOL PARSER] Invalid JSON for tool:', match[1], match[2])
+        }
+    }
+
+    return calls
+}
+
+/**
+ * Esegue tutte le chiamate tool estratte
+ */
+export async function executeToolCalls(
+    userId: string,
+    toolCalls: ToolCall[]
+): Promise<ToolResult[]> {
+    console.log('[TOOLS] Executing', toolCalls.length, 'tools for user', userId)
+    const results: ToolResult[] = []
+
+    for (const call of toolCalls) {
+        console.log('[TOOLS] →', call.tool, JSON.stringify(call.params))
+        let result: ToolResult
+
+        switch (call.tool) {
+            case 'save_memory':
+                result = await saveMemory(userId, call.params)
+                break
+            case 'update_profile':
+                result = await updateProfile(userId, call.params as any)
+                break
+            case 'create_goal':
+                result = await createGoal(userId, call.params as any)
+                break
+            case 'complete_goal':
+                result = await completeGoal(userId, call.params)
+                break
+            case 'create_task':
+                result = await createTask(userId, call.params as any)
+                break
+            case 'complete_task':
+                result = await completeTask(userId, call.params)
+                break
+            case 'award_xp':
+                result = await awardXpTool(userId, call.params as any)
+                break
+            case 'add_skill':
+                result = await addSkill(userId, call.params as any)
+                break
+            case 'level_up_skill':
+                result = await levelUpSkill(userId, call.params)
+                break
+            case 'add_material':
+                result = await addMaterial(userId, call.params as any)
+                break
+            case 'create_test':
+                result = await createTest(userId, call.params as any)
+                break
+            case 'verify_test':
+                result = await verifyTest(userId, call.params as any)
+                break
+            case 'web_search':
+                result = await webSearch(userId, call.params as any)
+                break
+            case 'query_brain':
+                result = await queryBrain(userId, call.params as any)
+                break
+            default:
+                result = { success: false, message: `Tool sconosciuto: ${call.tool}` }
+        }
+
+        console.log('[TOOLS] ←', call.tool, result.success ? '✓' : '✗', result.message)
+        results.push(result)
+    }
+
+    return results
+}
+
+/**
+ * Rimuove le chiamate tool dal testo per mostrare solo il messaggio all'utente
+ */
 export function cleanToolCalls(text: string): string {
-  return text.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, '').trim()
+    return text.replace(/\[TOOL:\w+\][\s\S]*?\[\/TOOL\]/g, '').trim()
+}
+
+/**
+ * Verifica se il testo contiene chiamate tool
+ */
+export function hasToolCalls(text: string): boolean {
+    return /\[TOOL:\w+\]/.test(text)
 }

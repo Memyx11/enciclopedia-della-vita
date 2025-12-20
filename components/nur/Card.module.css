@@ -1,0 +1,42 @@
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Variants */
+.variant-default {}
+
+.variant-elevated {
+    background: var(--bg-elevated);
+}
+
+.variant-bordered {
+    border-width: 2px;
+}
+
+.variant-interactive {
+    cursor: pointer;
+}
+
+.variant-interactive:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Padding */
+.padding-none { padding: 0; }
+.padding-sm { padding: var(--space-md); }
+.padding-md { padding: var(--space-lg); }
+.padding-lg { padding: var(--space-xl); }
+
+/* Border Left Accent */
+.border-purple { border-left: 4px solid var(--purple); }
+.border-gold { border-left: 4px solid var(--gold); }
+.border-green { border-left: 4px solid var(--green); }
+.border-red { border-left: 4px solid var(--red); }
+.border-blue { border-left: 4px solid var(--blue); }
