@@ -304,6 +304,30 @@ export default function GoalsPage() {
                     </div>
                 )}
             </div>
+
+            {/* BOTTOM NAV */}
+            <nav className={styles.bottomNav}>
+                <Link href="/la-mia-vita" className={styles.navItem}>
+                    <span className={styles.navIcon}>🏠</span>
+                    <span className={styles.navLabel}>Home</span>
+                </Link>
+                <Link href="/routine" className={styles.navItem}>
+                    <span className={styles.navIcon}>📅</span>
+                    <span className={styles.navLabel}>Routine</span>
+                </Link>
+                <Link href="/goals" className={`${styles.navItem} ${styles.navActive}`}>
+                    <span className={styles.navIcon}>🎯</span>
+                    <span className={styles.navLabel}>Goals</span>
+                </Link>
+                <Link href="/chat" className={styles.navItem}>
+                    <span className={styles.navIcon}>💬</span>
+                    <span className={styles.navLabel}>Chat</span>
+                </Link>
+                <Link href="/profile" className={styles.navItem}>
+                    <span className={styles.navIcon}>👤</span>
+                    <span className={styles.navLabel}>Profilo</span>
+                </Link>
+            </nav>
         </div>
     )
 }

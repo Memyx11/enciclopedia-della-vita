@@ -1,0 +1,557 @@
+.container {
+    min-height: 100vh;
+    position: relative;
+    padding-bottom: 80px;
+}
+
+/* =====================================================
+   LOADING STATE
+   ===================================================== */
+
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: var(--space-md);
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--purple);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* =====================================================
+   HEADER
+   ===================================================== */
+
+.header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(13, 13, 20, 0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-md) var(--space-lg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.headerLeft {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.logo {
+    font-size: 24px;
+}
+
+.logoText {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    background: var(--gradient-purple);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.headerRight {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.levelBadge {
+    padding: var(--space-xs) var(--space-md);
+    background: rgba(107, 70, 193, 0.15);
+    border: 1px solid rgba(107, 70, 193, 0.3);
+    border-radius: var(--radius-full);
+}
+
+.levelNum {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--purple-light);
+}
+
+/* =====================================================
+   MAIN CONTENT
+   ===================================================== */
+
+.main {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+/* =====================================================
+   NUR MESSAGE CARD
+   ===================================================== */
+
+.nurCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: var(--space-lg);
+    position: relative;
+    overflow: hidden;
+}
+
+.nurCard::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-purple);
+}
+
+.nurHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+}
+
+.nurEmoji {
+    font-size: 20px;
+}
+
+.nurLabel {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--purple-light);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.nurMessage {
+    font-size: var(--text-base);
+    line-height: 1.6;
+    color: var(--text);
+}
+
+/* =====================================================
+   SECTION HEADER
+   ===================================================== */
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+}
+
+.sectionIcon {
+    font-size: 18px;
+}
+
+.sectionTitle {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+/* =====================================================
+   BOSS TASK
+   ===================================================== */
+
+.bossSection {
+    /* Container for boss task */
+}
+
+.bossCard {
+    background: var(--bg-card);
+    border: 2px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-lg);
+    transition: all 0.3s ease;
+}
+
+.bossCard.completed {
+    border-color: var(--green);
+    opacity: 0.7;
+}
+
+.bossInfo {
+    flex: 1;
+}
+
+.bossTitle {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    margin-bottom: var(--space-xs);
+}
+
+.bossCard.completed .bossTitle {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.bossDesc {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-sm);
+}
+
+.bossXp {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--green);
+}
+
+.completeBtn {
+    padding: var(--space-sm) var(--space-lg);
+    background: var(--gradient-purple);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.completeBtn:hover {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-purple);
+}
+
+.completedBadge {
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(72, 187, 120, 0.15);
+    border: 1px solid rgba(72, 187, 120, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--green);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+/* =====================================================
+   TASKS LIST
+   ===================================================== */
+
+.tasksSection {
+    /* Container for tasks */
+}
+
+.tasksList {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.taskItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--border);
+    transition: all 0.2s ease;
+}
+
+.taskItem:last-child {
+    border-bottom: none;
+}
+
+.taskItem:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.taskItem.completed {
+    opacity: 0.6;
+}
+
+.taskCheck {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid var(--border);
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.taskCheck:hover:not(:disabled) {
+    border-color: var(--purple);
+    color: var(--purple);
+}
+
+.taskItem.completed .taskCheck {
+    background: rgba(72, 187, 120, 0.15);
+    border-color: var(--green);
+    color: var(--green);
+}
+
+.taskInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.taskTitle {
+    display: block;
+    font-size: var(--text-base);
+    font-weight: 500;
+}
+
+.taskItem.completed .taskTitle {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.taskArea {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.taskXp {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--green);
+    flex-shrink: 0;
+}
+
+.emptyTasks {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    text-align: center;
+}
+
+.emptyTasks p {
+    color: var(--text-muted);
+    margin-bottom: var(--space-md);
+}
+
+.addTaskBtn {
+    display: inline-block;
+    padding: var(--space-sm) var(--space-lg);
+    background: rgba(107, 70, 193, 0.1);
+    border: 1px solid rgba(107, 70, 193, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--purple-light);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.addTaskBtn:hover {
+    background: rgba(107, 70, 193, 0.2);
+}
+
+/* =====================================================
+   MISSION 10/10
+   ===================================================== */
+
+.missionSection {
+    /* Container for mission */
+}
+
+.missionCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-lg);
+}
+
+.missionProgress {
+    flex: 1;
+}
+
+.missionBar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--space-sm);
+}
+
+.missionBlock {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.missionBlock.filled {
+    background: var(--gradient-purple);
+}
+
+.missionCount {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.missionLink {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--purple-light);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.missionLink:hover {
+    text-decoration: underline;
+}
+
+/* =====================================================
+   QUICK STATS
+   ===================================================== */
+
+.statsSection {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-md);
+}
+
+.statCard {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.statIcon {
+    font-size: 24px;
+}
+
+.statValue {
+    font-family: var(--font-mono);
+    font-size: var(--text-xl);
+    font-weight: 800;
+    color: var(--purple-light);
+}
+
+.statLabel {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+
+/* =====================================================
+   BOTTOM NAV
+   ===================================================== */
+
+.bottomNav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(13, 13, 20, 0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    padding: var(--space-sm) var(--space-lg);
+    padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom));
+    z-index: 100;
+}
+
+.bottomNav {
+    display: flex;
+    justify-content: space-around;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.navItem {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.navItem:hover {
+    color: var(--text);
+}
+
+.navItem.active {
+    color: var(--purple-light);
+    background: rgba(107, 70, 193, 0.1);
+}
+
+.navIcon {
+    font-size: 20px;
+}
+
+.navLabel {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 640px) {
+    .main {
+        padding: var(--space-md);
+    }
+
+    .bossCard {
+        flex-direction: column;
+    }
+
+    .completeBtn {
+        width: 100%;
+    }
+
+    .statsSection {
+        grid-template-columns: 1fr;
+    }
+
+    .missionCard {
+        flex-direction: column;
+        text-align: center;
+    }
+}

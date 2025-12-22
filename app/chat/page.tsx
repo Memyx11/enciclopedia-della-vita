@@ -154,7 +154,7 @@ function ChatContent() {
     const hasTriggeredInitialMessage = useRef(false)
 
     // Message limit counter
-    const [messageCount, setMessageCount] = useState({ count: 0, limit: 20, remaining: 20 })
+    const [messageCount, setMessageCount] = useState({ count: 0, limit: 3, remaining: 3 })
     const [limitReached, setLimitReached] = useState(false)
 
     // Carica dati utente e messaggi
@@ -168,6 +168,34 @@ function ChatContent() {
 
         const loadData = async () => {
             try {
+                // Carica profilo per contatore messaggi
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('messages_today, messages_reset_at, subscription_tier')
+                    .eq('clerk_user_id', user.id)
+                    .single()
+
+                if (profile) {
+                    const today = new Date().toISOString().split('T')[0]
+                    const lastReset = profile.messages_reset_at
+                        ? new Date(profile.messages_reset_at).toISOString().split('T')[0]
+                        : null
+
+                    const isPro = profile.subscription_tier === 'pro'
+                    const limit = isPro ? 20 : 3
+                    const count = lastReset === today ? (profile.messages_today || 0) : 0
+
+                    setMessageCount({
+                        count,
+                        limit,
+                        remaining: Math.max(0, limit - count)
+                    })
+
+                    if (count >= limit) {
+                        setLimitReached(true)
+                    }
+                }
+
                 // Carica ultimi messaggi dalla nuova tabella chat_messages
                 const { data: msgs, error } = await supabaseClient
                     .from('chat_messages')
@@ -642,15 +670,23 @@ function ChatContent() {
             <nav className="bottom-nav">
                 <Link href="/la-mia-vita" className="nav-item">
                     <span>🏠</span>
-                    <span>Dashboard</span>
+                    <span>Home</span>
+                </Link>
+                <Link href="/routine" className="nav-item">
+                    <span>📅</span>
+                    <span>Routine</span>
+                </Link>
+                <Link href="/goals" className="nav-item">
+                    <span>🎯</span>
+                    <span>Goals</span>
                 </Link>
                 <Link href="/chat" className="nav-item active">
                     <span>💬</span>
                     <span>Chat</span>
                 </Link>
-                <Link href="/goals" className="nav-item">
-                    <span>🎯</span>
-                    <span>Goals</span>
+                <Link href="/profile" className="nav-item">
+                    <span>👤</span>
+                    <span>Profilo</span>
                 </Link>
             </nav>
         </div>
